@@ -41,6 +41,28 @@ public static class ProbePatches
         if (bmr != null)
             harmony.Patch(bmr, prefix: new HarmonyMethod(typeof(ProbePatches).GetMethod(nameof(PrefixBMR), All)!));
 
+        // UI 打开链路：OpenPage 页面名（定位"回忆工作台"分解界面）
+        // 注意：OpenPage 有泛型/非泛型两个重载（参数均为 string），AccessTools 会歧义，需精确查找
+        var um = typeof(Echoes.Core.Managers.UIManager);
+        var openPage = um.GetMethods(All)
+            .FirstOrDefault(m => m.Name == "OpenPage" && !m.IsGenericMethod
+                                 && m.GetParameters().Length == 1 && m.GetParameters()[0].ParameterType == typeof(string));
+        if (openPage == null) { _log.LogError("[Probe] FAILED find UIManager.OpenPage"); }
+        else
+        {
+            harmony.Patch(openPage, postfix: new HarmonyMethod(typeof(ProbePatches).GetMethod(nameof(OpenPagePostfix), All)!));
+            _log.LogInfo("[Probe] patched UIManager.OpenPage");
+        }
+        // UI 按键分发：观察 TAB（UIShowTabUI）等输入事件
+        var processKey = AccessTools.Method(um, "ProcessKeyInput",
+            new[] { typeof(GamepadModule.InputActionEvent), typeof(bool), typeof(bool) });
+        if (processKey == null) { _log.LogError("[Probe] FAILED find UIManager.ProcessKeyInput"); }
+        else
+        {
+            harmony.Patch(processKey, prefix: new HarmonyMethod(typeof(ProbePatches).GetMethod(nameof(ProcessKeyPrefix), All)!));
+            _log.LogInfo("[Probe] patched UIManager.ProcessKeyInput");
+        }
+
         log.LogInfo("[Probe] diagnostic patches installed");
     }
 
@@ -92,6 +114,20 @@ public static class ProbePatches
             var max = __args.Length > 2 && __args[2] is bool b && b;
             _log.LogInfo($"[Probe] Attr id={a.Id} Level={a.Level} MaxLevel={a.MaxLevel} Min={a.AttrMin:0.##} Max={a.AttrMax:0.##} maxRoll={max} content={Trunc(a.AttrContent)}");
         }
+    }
+
+    // UIManager.OpenPage(string) —— 打开页面时打印页面名与 UI 类型（定位 TAB 工作台）
+    private static void OpenPagePostfix(string pageName, Echoes.UI.UIBase __result)
+    {
+        _log.LogInfo($"[Probe] OpenPage: '{pageName}' -> {(__result?.GetType().FullName ?? "null")}");
+    }
+
+    // UIManager.ProcessKeyInput —— 观察按键事件（限频；UIShowTabUI=TAB）
+    private static void ProcessKeyPrefix(GamepadModule.InputActionEvent inputAction, bool press, bool holding)
+    {
+        if ((DateTime.UtcNow - _lastLog).TotalSeconds < 2) return;
+        _lastLog = DateTime.UtcNow;
+        _log.LogInfo($"[Probe] Key: {inputAction.KeyType} press={press} holding={holding}");
     }
 
     private static string Trunc(string? s) => s == null ? "null" : (s.Length > 60 ? s[..60] : s);

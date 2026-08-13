@@ -24,6 +24,10 @@
       <HintPath>E:\steam\steamapps\common\DreamEcho\BepInEx\interop\UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>E:\steam\steamapps\common\DreamEcho\BepInEx\interop\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Assembly-CSharp">
       <HintPath>E:\steam\steamapps\common\DreamEcho\BepInEx\interop\Assembly-CSharp.dll</HintPath>
       <Private>false</Private>
@@ -50,6 +54,18 @@
     </Reference>
     <Reference Include="Il2CppInterop.HarmonySupport">
       <HintPath>E:\steam\steamapps\common\DreamEcho\BepInEx\core\Il2CppInterop.HarmonySupport.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Sirenix.Serialization">
+      <HintPath>E:\steam\steamapps\common\DreamEcho\BepInEx\interop\Sirenix.Serialization.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Sirenix.OdinInspector.Attributes">
+      <HintPath>E:\steam\steamapps\common\DreamEcho\BepInEx\interop\Sirenix.OdinInspector.Attributes.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Sirenix.Utilities">
+      <HintPath>E:\steam\steamapps\common\DreamEcho\BepInEx\interop\Sirenix.Utilities.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
