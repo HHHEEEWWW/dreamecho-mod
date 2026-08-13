@@ -11,10 +11,10 @@ namespace DreamEchoMod;
 
 /// <summary>
 /// 正式修改功能：
-/// 1) T1Only：词缀强制最高档（Get postfix 替换 MaxLevel 行）
-/// 2) MinMemoryLevel：装备生成等级提升到 81（让 T1 词缀通过装备等级校验，防止装备生成失败）
-/// 3) DropMultiplier：每包独立倍数放大（格式 "包ID:倍数,包ID:倍数"），保持构成可控
-/// 日志全部限频（防止刷屏卡死）。
+/// 1) 装备等级提升（只对装备包 GetDrop 提升 dropLevel）→ 词缀按等级需求自然可选最高档（T1），
+///    完全符合游戏规则，不影响掉落条目选择（碎片/金币包不动）。
+/// 2) DropMultiplier：指定掉落包数量翻倍（深度保护 + 列表恢复，防指数爆炸）。
+/// 3) 稀有度平均化：RandomDrop 权重全部设为同一值（各稀有度等概率）。
 /// </summary>
 public static class ModPatches
 {
@@ -23,8 +23,8 @@ public static class ModPatches
     private static DateTime _lastLog = DateTime.MinValue;
 
     // ── 配置 ──
-    public static ConfigEntry<bool> EnableT1Only { get; private set; } = null!;
-    public static ConfigEntry<int> MinMemoryLevel { get; private set; } = null!;
+    public static ConfigEntry<int> MemoryDropLevel { get; private set; } = null!;
+    public static ConfigEntry<string> MemoryPacks { get; private set; } = null!;
     public static ConfigEntry<string> DropPacks { get; private set; } = null!;
     public static ConfigEntry<string> RarityWeights { get; private set; } = null!;
 
@@ -32,53 +32,29 @@ public static class ModPatches
     {
         _log = log;
 
-        EnableT1Only = config.Bind("词缀", "T1Only", true,
-            "词缀强制最高档（T1）。false=原版。");
-        MinMemoryLevel = config.Bind("词缀", "MinMemoryLevel", 81,
-            "装备生成等级下限（配合 T1Only 通过等级校验，防止装备生成失败）。1=原版。");
+        MemoryDropLevel = config.Bind("词缀", "MemoryDropLevel", 81,
+            "装备包（记忆）的掉落等级下限（词缀 T 档按等级需求选择；81=T1 最高档可出）。1=原版。");
+        MemoryPacks = config.Bind("词缀", "MemoryDropPacks", "721",
+            "视为装备包并提升掉落等级的包 ID 列表（逗号分隔）。");
         DropPacks = config.Bind("掉落", "DropMultiplierPacks", "701:10,711:2",
-            "掉落放大配置：包ID:倍数,包ID:倍数。701=装备碎片；711=车票；721=记忆装备(勿放大)；741=金币。装备:车票默认 10:2=5:1。");
-        RarityWeights = config.Bind("稀有度", "RarityWeights", "100,100,100,100,100",
-            "掉落稀有度权重（逗号分隔，按普通→稀有顺序）。平均权重=各稀有度等概率；空=原版。");
+            "掉落放大配置：包ID:倍数,包ID:倍数。701=装备碎片；711=车票；721=记忆装备(勿放大)；741=金币。");
+        RarityWeights = config.Bind("稀有度", "RarityWeights", "100",
+            "掉落稀有度权重：单个数字=所有档位平均化（推荐 100）；多个数字=按档位逐个指定；空=原版。");
 
         var harmony = new Harmony("com.dreamecho.mod");
         var t = typeof(Echoes.Core.Utility.DropHelper);
 
-        // 0. 稀有度倒挂：RandomDrop 的权重数组替换（普通→稀有递增）
-        var randomDrop = AccessTools.Method(t, "RandomDrop",
-            new[] { typeof(List<int>), typeof(Echoes.Core.Utility.DropHelper.EDropLuckyType), typeof(List<int>) });
-        if (randomDrop == null) { log.LogError("[Mod] FAILED find DropHelper.RandomDrop"); }
+        // 1. 装备包掉落等级提升（词缀 T1 按规则可出，碎片/金币包不受影响）
+        var getDrop = AccessTools.Method(t, "GetDrop",
+            new[] { typeof(int), typeof(int), typeof(int).MakeByRefType(), typeof(int), typeof(HashSet<int>), typeof(Dictionary<int, List<int>>) });
+        if (getDrop == null) { log.LogError("[Mod] FAILED find DropHelper.GetDrop"); }
         else
         {
-            harmony.Patch(randomDrop, prefix: new HarmonyMethod(typeof(ModPatches).GetMethod(nameof(RandomDropPrefix), All)!));
-            log.LogInfo("[Mod] patched DropHelper.RandomDrop (RarityInvert)");
-        }
-        var affixGet = AccessTools.Method(typeof(Echoes.Config.TConceptMemoryAffix), "Get",
-            new[] { typeof(int), typeof(int) });
-        if (affixGet == null) { log.LogError("[Mod] FAILED find TConceptMemoryAffix.Get"); }
-        else
-        {
-            harmony.Patch(affixGet, postfix: new HarmonyMethod(typeof(ModPatches).GetMethod(nameof(AffixGetPostfix), All)!));
-            log.LogInfo("[Mod] patched TConceptMemoryAffix.Get (T1Only)");
+            harmony.Patch(getDrop, prefix: new HarmonyMethod(typeof(ModPatches).GetMethod(nameof(GetDropPrefix), All)!));
+            log.LogInfo("[Mod] patched DropHelper.GetDrop (MemoryDropLevel)");
         }
 
-        // 2. 装备等级提升（让 T1 通过校验）
-        var buildRandom = AccessTools.Method(t, "BuildMemoryRandom",
-            new[] { typeof(List<Echoes.ConceptMemoryAffixPack>), typeof(List<int>), typeof(int), typeof(int), typeof(HashSet<int>), typeof(HashSet<int>) });
-        if (buildRandom != null)
-        {
-            harmony.Patch(buildRandom, prefix: new HarmonyMethod(typeof(ModPatches).GetMethod(nameof(BuildMemoryRandomPrefix), All)!));
-            log.LogInfo("[Mod] patched DropHelper.BuildMemoryRandom (MinMemoryLevel)");
-        }
-        var buildMemory = AccessTools.Method(t, "BuildMemory",
-            new[] { typeof(Echoes.Drop), typeof(int), typeof(List<Echoes.HomeShopTargetedBuyOrder>), typeof(HashSet<int>) });
-        if (buildMemory != null)
-        {
-            harmony.Patch(buildMemory, prefix: new HarmonyMethod(typeof(ModPatches).GetMethod(nameof(BuildMemoryPrefix), All)!));
-            log.LogInfo("[Mod] patched DropHelper.BuildMemory (MinMemoryLevel)");
-        }
-
-        // 3. 掉落翻倍（每包独立倍数）：CreateDrop 两个重载
+        // 2. 掉落翻倍：CreateDrop 两个重载（深度保护 + 列表恢复）
         foreach (var sig in new[]
         {
             new[] { typeof(List<int>), typeof(Vector3), typeof(float) },
@@ -92,6 +68,16 @@ public static class ModPatches
                 postfix: new HarmonyMethod(typeof(ModPatches).GetMethod(nameof(CreateDropPostfix), All)!));
             log.LogInfo($"[Mod] patched CreateDrop({string.Join(",", sig.Select(s => s.Name))})");
         }
+
+        // 3. 稀有度平均化
+        var randomDrop = AccessTools.Method(t, "RandomDrop",
+            new[] { typeof(List<int>), typeof(Echoes.Core.Utility.DropHelper.EDropLuckyType), typeof(List<int>) });
+        if (randomDrop == null) { log.LogError("[Mod] FAILED find DropHelper.RandomDrop"); }
+        else
+        {
+            harmony.Patch(randomDrop, prefix: new HarmonyMethod(typeof(ModPatches).GetMethod(nameof(RandomDropPrefix), All)!));
+            log.LogInfo("[Mod] patched DropHelper.RandomDrop (RarityAvg)");
+        }
     }
 
     private static void LogRateLimited(string msg)
@@ -101,26 +87,49 @@ public static class ModPatches
         _log.LogInfo(msg);
     }
 
-    // ── 稀有度倒挂：把权重数组替换为配置的「普通→稀有」递增权重 ──
+    // ── 装备包掉落等级提升：词缀 T 档按等级需求自然提升 ──
+    private static void GetDropPrefix(int packId, ref int dropLevel)
+    {
+        if (MemoryDropLevel.Value <= 1) return;
+        if (dropLevel >= MemoryDropLevel.Value) return;
+
+        var packs = MemoryPacks.Value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(s => int.TryParse(s, out var v) ? v : -1).Where(v => v > 0).ToHashSet();
+        if (packs.Contains(packId))
+        {
+            LogRateLimited($"[Mod] pack {packId} dropLevel {dropLevel}->{MemoryDropLevel.Value}");
+            dropLevel = MemoryDropLevel.Value;
+        }
+    }
+
+    // ── 稀有度平均化：权重全部设为同一值 ──
     [ThreadStatic] private static bool _rarityPatched;
 
     private static void RandomDropPrefix(List<int> weights)
     {
         if (weights == null || weights.Count == 0) return;
-        if (_rarityPatched) return; // 防 RandomDrop 内部调 RollDropWeightIndex 再触发（前缀快照）
+        if (_rarityPatched) return;
         var cfg = RarityWeights.Value;
         if (string.IsNullOrWhiteSpace(cfg)) return;
 
         var parts = cfg.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (parts.Length != weights.Count)
-        {
-            LogRateLimited($"[Mod] RarityWeights 数量({parts.Length})与权重数量({weights.Count})不符，忽略");
-            return;
-        }
+        if (parts.Length == 0) return;
+
         var vals = new List<int>();
-        foreach (var p in parts)
-            if (int.TryParse(p, out var v) && v >= 0) vals.Add(v);
-        if (vals.Count != weights.Count) return;
+        if (parts.Length == 1)
+        {
+            // 单值：所有档位平均化
+            if (!int.TryParse(parts[0], out var v) || v <= 0) return;
+            for (var i = 0; i < weights.Count; i++) vals.Add(v);
+        }
+        else
+        {
+            // 多值：按长度匹配
+            if (parts.Length != weights.Count) return;
+            foreach (var p in parts)
+                if (int.TryParse(p, out var v) && v >= 0) vals.Add(v);
+            if (vals.Count != weights.Count) return;
+        }
 
         _rarityPatched = true;
         try
@@ -129,7 +138,7 @@ public static class ModPatches
             for (var i = 0; i < weights.Count; i++) { if (i > 0) sb.Append(','); sb.Append(weights[i]); }
             var before = sb.ToString();
             for (var i = 0; i < weights.Count; i++) weights[i] = vals[i];
-            LogRateLimited($"[Mod] Rarity {before} -> {string.Join(",", vals)}");
+            LogRateLimited($"[Mod] Rarity [{weights.Count}] {before} -> {string.Join(",", vals)}");
         }
         finally
         {
@@ -137,66 +146,18 @@ public static class ModPatches
         }
     }
 
-    // ── T1 词缀：把返回词缀替换为该词缀最高档（MaxLevel）配置行 ──
-    // 注意：postfix 里调用 __instance.Get 会再次触发本 patch，必须用递归保护
-    [ThreadStatic] private static bool _inT1Patch;
-
-    private static void AffixGetPostfix(ref Echoes.ConceptMemoryAffix __result,
-        Echoes.Config.TConceptMemoryAffix __instance)
-    {
-        if (!EnableT1Only.Value || __result == null || __result.MaxLevel <= 1) return;
-        if (__result.Level >= __result.MaxLevel) return;
-        if (_inT1Patch) return; // 内部查询（查 MaxLevel 档）不再替换，防无限递归
-
-        _inT1Patch = true;
-        try
-        {
-            var best = __instance.Get(__result.Id, __result.MaxLevel);
-            if (best != null && best.Level == __result.MaxLevel)
-            {
-                LogRateLimited($"[Mod] T1: affix {__result.Id} L{__result.Level}->L{best.Level}");
-                __result = best;
-            }
-        }
-        finally
-        {
-            _inT1Patch = false;
-        }
-    }
-
-    // ── 装备等级提升 ──
-    private static void BuildMemoryRandomPrefix(ref int memoryLevel, ref int MinLevel)
-    {
-        if (MinMemoryLevel.Value > 1)
-        {
-            if (memoryLevel < MinMemoryLevel.Value) memoryLevel = MinMemoryLevel.Value;
-            if (MinLevel < MinMemoryLevel.Value) MinLevel = MinMemoryLevel.Value;
-        }
-    }
-
-    private static void BuildMemoryPrefix(ref int memoryLevel)
-    {
-        if (MinMemoryLevel.Value > 1 && memoryLevel < MinMemoryLevel.Value)
-            memoryLevel = MinMemoryLevel.Value;
-    }
-
-    // ── 掉落翻倍（每包独立倍数）──
-    // 两个陷阱都要防：
-    // 1) CreateDrop 嵌套调用 → 深度保护（仅最外层放大）
-    // 2) 游戏缓存/复用同一个列表对象 → Prefix 放大后 Postfix 必须恢复原状（否则永久累积指数爆炸）
+    // ── 掉落翻倍（深度保护 + 列表恢复）──
     [ThreadStatic] private static int _dropDepth;
     [ThreadStatic] private static int _addedCount;
 
     private static void CreateDropPrefix(List<int> packIdList)
     {
         _dropDepth++;
-        if (_dropDepth != 1) return; // 内层调用：不放大
-
+        if (_dropDepth != 1) return;
         if (packIdList == null || packIdList.Count == 0) return;
 
         try
         {
-            // 解析 "id:mult,id:mult"
             var mults = new Dictionary<int, int>();
             foreach (var part in DropPacks.Value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
@@ -213,13 +174,11 @@ public static class ModPatches
             for (var i = 0; i < originalCount; i++)
             {
                 if (mults.TryGetValue(packIdList[i], out var m))
-                {
                     for (var k = 0; k < m - 1; k++)
                     {
                         packIdList.Add(packIdList[i]);
                         _addedCount++;
                     }
-                }
             }
 
             if (_addedCount > 0)
@@ -235,7 +194,6 @@ public static class ModPatches
     {
         if (_dropDepth == 1 && _addedCount > 0 && packIdList != null)
         {
-            // 恢复列表原状（删除本次添加的末尾元素），防止游戏缓存放大后的列表导致指数爆炸
             for (var i = 0; i < _addedCount && packIdList.Count > 0; i++)
                 packIdList.RemoveAt(packIdList.Count - 1);
             _addedCount = 0;

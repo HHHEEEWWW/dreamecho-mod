@@ -35,6 +35,11 @@ public static class ProbePatches
         Patch(harmony, AccessTools.Method(t, "BuildMemoryAttr",
             new[] { typeof(Echoes.ConceptMemoryAffix), typeof(Echoes.Core.Managers.EAffixType), typeof(bool) }), "Attr",
             postfix: nameof(PostfixAttr));
+        // 词缀生成链路：BuildMemoryRandom 的 memoryLevel（不限频，调用量小）
+        var bmr = AccessTools.Method(t, "BuildMemoryRandom",
+            new[] { typeof(List<Echoes.ConceptMemoryAffixPack>), typeof(List<int>), typeof(int), typeof(int), typeof(HashSet<int>), typeof(HashSet<int>) });
+        if (bmr != null)
+            harmony.Patch(bmr, prefix: new HarmonyMethod(typeof(ProbePatches).GetMethod(nameof(PrefixBMR), All)!));
 
         log.LogInfo("[Probe] diagnostic patches installed");
     }
@@ -66,6 +71,15 @@ public static class ProbePatches
             : "?";
         var ratio = __args.Length > 1 ? __args[1] : "?";
         _log.LogInfo($"[Probe] ApplyLuck({g}, ratio={ratio}) => {__result:0.###}");
+    }
+
+    // BuildMemoryRandom 词缀生成链路（memoryLevel 是词缀档位选择的输入）
+    private static void PrefixBMR(object[] __args)
+    {
+        if (__args.Length < 4) return;
+        var packCnt = __args[0] is List<Echoes.ConceptMemoryAffixPack> pl ? pl.Count : -1;
+        var wCnt = __args[1] is List<int> wl ? wl.Count : -1;
+        _log.LogInfo($"[Probe] BMR packs={packCnt} weights={wCnt} memoryLevel={__args[2]} MinLevel={__args[3]}");
     }
 
     // BuildMemoryAttr 收到的词缀配置详情（数值链路验证）
