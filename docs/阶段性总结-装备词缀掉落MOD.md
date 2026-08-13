@@ -13,7 +13,28 @@
 1. ✅ 掉落数量提升（碎片 ×10、车票 ×2 = 5:1）
 2. ✅ 词缀只出最高 T 级（T1）——**方案 #4 验证成功（2026-08-14）**
 3. ⚠️ 稀有度调整（平均化已上线，3:1 精确比例待定）
-4. ⏳ 一键分解（含传奇）——未开始
+4. ✅ 自动拾取（F8 开关，复用一键拾取）——**2026-08-14 上线**
+5. ✅ 一键分解（F9，批量 DisassembleAll，含原初回忆）——**2026-08-14 上线**
+
+## 2. 新功能（2026-08-14 上线）
+
+### 2.5 自动拾取（正式功能）
+- 复用游戏自带一键拾取链路：`Absorb 键 → PlayerInputSystem.Absorb → InteractiveItemManager.AbsorbAllDropItem()`
+- 实现：hook `InteractiveItemManager.OnUpdate` postfix → 节流（0.5s）调用 `AbsorbAllDropItem()`——行为与手动按键一致
+- 热键：**F8** 切换开/关（运行时）；配置：`AutoAbsorb`、`Interval`、`ToggleKey`
+- 注意：热键检测挂 `InputManager.Update`（MonoBehaviour 全局每帧，任何界面可用）
+
+### 2.6 一键分解（正式功能）
+- 定位：分解逻辑在 `Echoes.UI.UIBackPack`（`DisassembleAll`/`DisassembleMemory` 等）；回忆工作台 = TAB 打开的 UI
+- 实现：hook `InputManager.Update` 检测 **F9** → 遍历 `PlayerBackpackData.Backpack[Memory]` → 按稀有度过滤 → 调用游戏自带 `DisassembleAll(rarity)`（一次性批量分解）
+- 实测：1594 件一次性分解成功，无逐个动画；原初回忆（Special=5）可一键分解
+- 配置：`DisassembleRarities`（枚举名，默认全部 1~5）、`DisassembleKey`（F9）
+- **踩坑**：
+  - Il2Cpp 列表元素 `is` 检查永远失败（托管包装是基类）→ 必须用 `TryCast<T>()`
+  - 游戏稀有度枚举值 = **1~5**（Normal=1...Special=5），非 0~4；配置用枚举名解析自动匹配
+  - 背包数据 = `PlayerBackpackData.Backpack`（`Dictionary<EBackpackItemType, Backpack>`，按类型索引）
+  - `InputManager.Update` 是可靠全局热键钩子（InteractiveItemManager.OnUpdate 部分界面不驱动）
+  - BepInEx cfg 持久化旧默认值：改代码默认值不会更新已有 cfg（需手动改 cfg 或删 cfg）
 
 ## 2. 已完成 ✅
 
@@ -122,10 +143,12 @@ RarityWeights = 100         # 单值=所有档位等概率（平均化）
 
 - [x] **T1 方案 #4 验证**（BMR postfix 替换）——✅ 成功，全最高档
 - [x] **0.1.1 补丁兼容**（buildid 24718487）——✅ 零改动兼容，8 补丁全装
-- [ ] 确认 memoryLevel 来源（车票等级？难度？）——观察日志已有 60/70/81 分布，可结合车票等级对照
-- [ ] 一键分解功能（含传奇）——需要定位分解逻辑（背包 UI 相关类）
+- [x] **自动拾取**——✅ 上线（F8 开关，复用 AbsorbAllDropItem）
+- [x] **一键分解**——✅ 上线（F9 批量 DisassembleAll，含原初回忆）
+- [ ] 确认 memoryLevel 来源（车票等级？难度？）——观察日志已有 60/70/81/84 分布
 - [ ] 稀有度精确比例（若需 3:1 而非平均化，配置多值权重）
 - [ ] 高级图碎片包确认（630xx 是否替代 701）
+- [ ] 自动拾取效果回归确认（用户最终验收）
 
 ## 8. 文件结构
 
