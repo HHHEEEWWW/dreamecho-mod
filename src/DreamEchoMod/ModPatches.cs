@@ -89,17 +89,29 @@ public static class ModPatches
     }
 
     // ── T1 词缀：把返回词缀替换为该词缀最高档（MaxLevel）配置行 ──
+    // 注意：postfix 里调用 __instance.Get 会再次触发本 patch，必须用递归保护
+    [ThreadStatic] private static bool _inT1Patch;
+
     private static void AffixGetPostfix(ref Echoes.ConceptMemoryAffix __result,
         Echoes.Config.TConceptMemoryAffix __instance)
     {
         if (!EnableT1Only.Value || __result == null || __result.MaxLevel <= 1) return;
         if (__result.Level >= __result.MaxLevel) return;
+        if (_inT1Patch) return; // 内部查询（查 MaxLevel 档）不再替换，防无限递归
 
-        var best = __instance.Get(__result.Id, __result.MaxLevel);
-        if (best != null && best.Level == __result.MaxLevel)
+        _inT1Patch = true;
+        try
         {
-            LogRateLimited($"[Mod] T1: affix {__result.Id} L{__result.Level}->L{best.Level}");
-            __result = best;
+            var best = __instance.Get(__result.Id, __result.MaxLevel);
+            if (best != null && best.Level == __result.MaxLevel)
+            {
+                LogRateLimited($"[Mod] T1: affix {__result.Id} L{__result.Level}->L{best.Level}");
+                __result = best;
+            }
+        }
+        finally
+        {
+            _inT1Patch = false;
         }
     }
 
