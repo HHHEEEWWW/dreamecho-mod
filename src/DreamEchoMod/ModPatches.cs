@@ -44,14 +44,16 @@ public static class ModPatches
         var harmony = new Harmony("com.dreamecho.mod");
         var t = typeof(Echoes.Core.Utility.DropHelper);
 
-        // 1. 词缀生成等级提升：BuildMemoryRandom 的 memoryLevel 直接决定词缀档位（实测恒 20）
+        // 1. 词缀生成等级提升：BuildMemoryRandom 的 memoryLevel 直接决定词缀档位（实测恒 20/40）
         var bmr = AccessTools.Method(t, "BuildMemoryRandom",
             new[] { typeof(List<Echoes.ConceptMemoryAffixPack>), typeof(List<int>), typeof(int), typeof(int), typeof(HashSet<int>), typeof(HashSet<int>) });
         if (bmr == null) { log.LogError("[Mod] FAILED find DropHelper.BuildMemoryRandom"); }
         else
         {
-            harmony.Patch(bmr, prefix: new HarmonyMethod(typeof(ModPatches).GetMethod(nameof(BuildMemoryRandomPrefix), All)!));
-            log.LogInfo("[Mod] patched DropHelper.BuildMemoryRandom (MemoryLevel)");
+            harmony.Patch(bmr,
+                prefix: new HarmonyMethod(typeof(ModPatches).GetMethod(nameof(BuildMemoryRandomPrefix), All)!),
+                postfix: new HarmonyMethod(typeof(ModPatches).GetMethod(nameof(BuildMemoryRandomPostfix), All)!));
+            log.LogInfo("[Mod] patched DropHelper.BuildMemoryRandom (MemoryLevel + T1Result)");
         }
 
         // 1b. 装备包掉落等级提升（备用入口）
@@ -97,17 +99,30 @@ public static class ModPatches
         _log.LogInfo(msg);
     }
 
-    // ── 词缀生成等级提升：memoryLevel 直接决定词缀档位 ──
-    private static void BuildMemoryRandomPrefix(ref int memoryLevel, ref int MinLevel)
+    // ── 词缀生成等级提升：memoryLevel 直接决定词缀档位（只改 memoryLevel，MinLevel 不动防止词缀包过滤）──
+    private static void BuildMemoryRandomPrefix(ref int memoryLevel)
     {
+        _log.LogInfo($"[Mod] BMR prefix: memoryLevel={memoryLevel}"); // 无条件日志：验证 prefix 执行与 ref 修改
         if (MemoryDropLevel.Value <= 1) return;
         if (memoryLevel < MemoryDropLevel.Value)
         {
-            LogRateLimited($"[Mod] memoryLevel {memoryLevel}->{MemoryDropLevel.Value}");
             memoryLevel = MemoryDropLevel.Value;
+            LogRateLimited($"[Mod] memoryLevel -> {MemoryDropLevel.Value}");
         }
-        if (MinLevel < MemoryDropLevel.Value)
-            MinLevel = MemoryDropLevel.Value;
+    }
+
+    // ── T1 词缀：BMR 返回的选中词缀替换为最高档（Get 未被 patch，无递归）──
+    private static void BuildMemoryRandomPostfix(ref Il2CppSystem.ValueTuple<Echoes.ConceptMemoryAffix, Echoes.ConceptMemoryAffixPack> __result)
+    {
+        if (__result.Item1 == null) return;
+        var affix = __result.Item1;
+        if (affix.MaxLevel <= 1 || affix.Level >= affix.MaxLevel) return;
+        var best = Echoes.ConfigManager.Tables.TConceptMemoryAffix.Get(affix.Id, affix.MaxLevel);
+        if (best != null && best.Level == affix.MaxLevel)
+        {
+            LogRateLimited($"[Mod] BMR T1: affix {affix.Id} L{affix.Level}->L{best.Level} (min={best.AttrMin:0.#} max={best.AttrMax:0.#})");
+            __result.Item1 = best;
+        }
     }
 
     // ── 装备包掉落等级提升：词缀 T 档按等级需求自然提升 ──
