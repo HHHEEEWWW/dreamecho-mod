@@ -33,9 +33,9 @@ public static class ModPatches
         _log = log;
 
         MemoryDropLevel = config.Bind("词缀", "MemoryDropLevel", 81,
-            "装备包（记忆）的掉落等级下限（词缀 T 档按等级需求选择；81=T1 最高档可出）。1=原版。");
+            "【已停用】原装备掉落等级下限方案（IL2CPP ref 修改未传回且疑破坏装备 UI）。T1 改由 postfix 强制最高档实现。");
         MemoryPacks = config.Bind("词缀", "MemoryDropPacks", "721",
-            "视为装备包并提升掉落等级的包 ID 列表（逗号分隔）。");
+            "【已停用】原视为装备包并提升掉落等级的包 ID 列表（逗号分隔）。");
         DropPacks = config.Bind("掉落", "DropMultiplierPacks", "701:10,711:2",
             "掉落放大配置：包ID:倍数,包ID:倍数。701=装备碎片；711=车票；721=记忆装备(勿放大)；741=金币。");
         RarityWeights = config.Bind("稀有度", "RarityWeights", "100",
@@ -44,7 +44,8 @@ public static class ModPatches
         var harmony = new Harmony("com.dreamecho.mod");
         var t = typeof(Echoes.Core.Utility.DropHelper);
 
-        // 1. 词缀生成等级提升：BuildMemoryRandom 的 memoryLevel 直接决定词缀档位（实测恒 20/40）
+        // 1. 词缀 T1：仅 postfix 替换选中词缀为最高档（已实证生效 62 次替换）。
+        //    prefix 的 memoryLevel 修改已停用：探针证实 ref 修改未传回，且 81 级装备疑为 UI 卡死根源。
         var bmr = AccessTools.Method(t, "BuildMemoryRandom",
             new[] { typeof(List<Echoes.ConceptMemoryAffixPack>), typeof(List<int>), typeof(int), typeof(int), typeof(HashSet<int>), typeof(HashSet<int>) });
         if (bmr == null) { log.LogError("[Mod] FAILED find DropHelper.BuildMemoryRandom"); }
@@ -53,17 +54,17 @@ public static class ModPatches
             harmony.Patch(bmr,
                 prefix: new HarmonyMethod(typeof(ModPatches).GetMethod(nameof(BuildMemoryRandomPrefix), All)!),
                 postfix: new HarmonyMethod(typeof(ModPatches).GetMethod(nameof(BuildMemoryRandomPostfix), All)!));
-            log.LogInfo("[Mod] patched DropHelper.BuildMemoryRandom (MemoryLevel + T1Result)");
+            log.LogInfo("[Mod] patched DropHelper.BuildMemoryRandom (observe prefix + T1 postfix)");
         }
 
-        // 1b. 装备包掉落等级提升（备用入口）
+        // 1b. GetDrop dropLevel 修改已停用（同上理由），仅观察
         var getDrop = AccessTools.Method(t, "GetDrop",
             new[] { typeof(int), typeof(int), typeof(int).MakeByRefType(), typeof(int), typeof(HashSet<int>), typeof(Dictionary<int, List<int>>) });
         if (getDrop == null) { log.LogError("[Mod] FAILED find DropHelper.GetDrop"); }
         else
         {
             harmony.Patch(getDrop, prefix: new HarmonyMethod(typeof(ModPatches).GetMethod(nameof(GetDropPrefix), All)!));
-            log.LogInfo("[Mod] patched DropHelper.GetDrop (MemoryDropLevel)");
+            log.LogInfo("[Mod] patched DropHelper.GetDrop (observe only)");
         }
 
         // 2. 掉落翻倍：CreateDrop 两个重载（深度保护 + 列表恢复）
@@ -99,16 +100,10 @@ public static class ModPatches
         _log.LogInfo(msg);
     }
 
-    // ── 词缀生成等级提升：memoryLevel 直接决定词缀档位（只改 memoryLevel，MinLevel 不动防止词缀包过滤）──
-    private static void BuildMemoryRandomPrefix(ref int memoryLevel)
+    // ── 观察模式：只打印 memoryLevel（修改已停用——探针证实 IL2CPP ref 修改未传回）──
+    private static void BuildMemoryRandomPrefix(int memoryLevel)
     {
-        _log.LogInfo($"[Mod] BMR prefix: memoryLevel={memoryLevel}"); // 无条件日志：验证 prefix 执行与 ref 修改
-        if (MemoryDropLevel.Value <= 1) return;
-        if (memoryLevel < MemoryDropLevel.Value)
-        {
-            memoryLevel = MemoryDropLevel.Value;
-            LogRateLimited($"[Mod] memoryLevel -> {MemoryDropLevel.Value}");
-        }
+        _log.LogInfo($"[Mod] BMR prefix(observe): memoryLevel={memoryLevel}");
     }
 
     // ── T1 词缀：BMR 返回的选中词缀替换为最高档（Get 未被 patch，无递归）──
@@ -125,19 +120,10 @@ public static class ModPatches
         }
     }
 
-    // ── 装备包掉落等级提升：词缀 T 档按等级需求自然提升 ──
-    private static void GetDropPrefix(int packId, ref int dropLevel)
+    // ── 观察模式：只打印装备包 dropLevel（修改已停用——同上理由）──
+    private static void GetDropPrefix(int packId, int dropLevel)
     {
-        if (MemoryDropLevel.Value <= 1) return;
-        if (dropLevel >= MemoryDropLevel.Value) return;
-
-        var packs = MemoryPacks.Value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(s => int.TryParse(s, out var v) ? v : -1).Where(v => v > 0).ToHashSet();
-        if (packs.Contains(packId))
-        {
-            LogRateLimited($"[Mod] pack {packId} dropLevel {dropLevel}->{MemoryDropLevel.Value}");
-            dropLevel = MemoryDropLevel.Value;
-        }
+        LogRateLimited($"[Mod] GetDrop(observe): pack={packId} dropLevel={dropLevel}");
     }
 
     // ── 稀有度平均化：权重全部设为同一值 ──
