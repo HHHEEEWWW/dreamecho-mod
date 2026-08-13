@@ -21,7 +21,7 @@ public class Plugin : BasePlugin
         // 正式修改功能（T1 词缀 + 掉落翻倍，配置文件可控）
         ModPatches.Install(Log, Config);
 
-        // 探针已停用（正式版日志刷屏会卡死游戏；需要诊断时再启用）
-        // ProbePatches.Install(Log);
+        // 临时诊断探针：稀有度掷骰参数观察（限频）
+        ProbePatches.Install(Log);
     }
 }

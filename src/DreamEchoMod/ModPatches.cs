@@ -76,7 +76,9 @@ public static class ModPatches
         {
             var m = AccessTools.Method(t, "CreateDrop", sig);
             if (m == null) { log.LogError($"[Mod] FAILED find CreateDrop({string.Join(",", sig.Select(s => s.Name))})"); continue; }
-            harmony.Patch(m, prefix: new HarmonyMethod(typeof(ModPatches).GetMethod(nameof(CreateDropPrefix), All)!));
+            harmony.Patch(m,
+                prefix: new HarmonyMethod(typeof(ModPatches).GetMethod(nameof(CreateDropPrefix), All)!),
+                postfix: new HarmonyMethod(typeof(ModPatches).GetMethod(nameof(CreateDropPostfix), All)!));
             log.LogInfo($"[Mod] patched CreateDrop({string.Join(",", sig.Select(s => s.Name))})");
         }
     }
@@ -132,7 +134,33 @@ public static class ModPatches
     }
 
     // ── 掉落翻倍（每包独立倍数）──
+    // 注意：CreateDrop 可能被嵌套调用（掉落内部再触发），嵌套时跳过放大，防止指数爆炸
+    private static int _dropDepth;
+
     private static void CreateDropPrefix(List<int> packIdList)
+    {
+        _dropDepth++;
+        if (_dropDepth != 1)
+        {
+            // 内层调用：不放大（防止 8->18->110->... 指数爆炸）
+            return;
+        }
+        try
+        {
+            Amplify(packIdList);
+        }
+        catch (Exception e)
+        {
+            _log.LogError($"[Mod] CreateDropPrefix error: {e.Message}");
+        }
+    }
+
+    private static void CreateDropPostfix()
+    {
+        if (_dropDepth > 0) _dropDepth--;
+    }
+
+    private static void Amplify(List<int> packIdList)
     {
         if (packIdList == null || packIdList.Count == 0) return;
 
