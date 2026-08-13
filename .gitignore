@@ -4,4 +4,5 @@ dist/
 il2cpp-dump/*
 !il2cpp-dump/导出摘要.md
 *.user
-tools/
+tools/*
+!tools/TypeExplorer/
