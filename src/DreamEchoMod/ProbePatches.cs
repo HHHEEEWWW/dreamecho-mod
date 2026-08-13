@@ -74,10 +74,33 @@ public static class ProbePatches
         _log.LogInfo($"[Probe] RATIO => {__result:0.###}  (memory={__args[1]}, coin={__args[2]}, shard={__args[3]})");
     }
 
-    // GETDROP Postfix：rarity 最终值
+    // GETDROP Postfix：rarity 最终值 + 材料/记忆名称识别
     private static void PostfixGetDrop(object __result, object[] __args)
     {
         var rarity = __args.Length > 2 ? __args[2] : null;
+        var content = 0;
+        if (__result is Echoes.Drop d)
+        {
+            content = d.DropContentId;
+            // 识别碎片（ConceptShards）
+            try
+            {
+                var shard = Echoes.ConfigManager.Tables.TConceptShards.GetOrDefault(content);
+                if (shard != null)
+                {
+                    _log.LogInfo($"[Probe] SHARD content={content} Name={shard.Name} Type={shard.ShardsType} Rarity={shard.Rarity}");
+                    return;
+                }
+            }
+            catch { /* 表未加载时忽略 */ }
+            try
+            {
+                var mb = Echoes.ConfigManager.Tables.TConceptMemoryBase.GetOrDefault(content);
+                if (mb != null)
+                    _log.LogInfo($"[Probe] MEMBASE content={content} Name={mb.BaseName} MaxPrefix={mb.MaxPrefixNum} MaxSuffix={mb.MaxSuffixNum}");
+            }
+            catch { /* 表未加载时忽略 */ }
+        }
         _log.LogInfo($"[Probe] GETDROP => rarity={rarity}, drop={Format(__result)}");
     }
 
