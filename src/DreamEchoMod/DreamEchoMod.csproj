@@ -16,6 +16,10 @@
       <HintPath>E:\steam\steamapps\common\DreamEcho\BepInEx\core\BepInEx.Unity.IL2CPP.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="BepInEx.dll">
+      <HintPath>E:\steam\steamapps\common\DreamEcho\BepInEx\core\BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine">
       <HintPath>E:\steam\steamapps\common\DreamEcho\BepInEx\interop\UnityEngine.dll</HintPath>
       <Private>false</Private>
