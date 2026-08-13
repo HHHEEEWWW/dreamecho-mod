@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - 游戏目录：`E:\steam\steamapps\common\DreamEcho`（勿改动游戏原始文件，只新增 BepInEx 相关文件）
-- 项目目录：`E:\AI work\item-box\code\dreamecho-mod`
+- 项目目录：`E:\deepseekharness\BeplnEx-mod-workplace\dreamecho-mod`
 - 禁止使用 MelonLoader；只允许 BepInEx 6 IL2CPP
 - 所有命令单行执行，不使用续行符
 - `tools/`、`il2cpp-dump/`、`bin/`、`obj/`、`dist/` 不入 git（.gitignore 已配置）
@@ -31,8 +31,8 @@
 - [ ] **Step 1: 创建 tools 目录并下载 BepInExPack_IL2CPP 6.0.755**
 
 ```bash
-mkdir -p 'E:\AI work\item-box\code\dreamecho-mod\tools\BepInExPack_IL2CPP' 'E:\AI work\item-box\code\dreamecho-mod\tools\Cpp2IL'
-curl -L -o 'E:\AI work\item-box\code\dreamecho-mod\tools\BepInExPack_IL2CPP\BepInExPack_IL2CPP-6.0.755.zip' 'https://thunderstore.io/package/download/BepInEx/BepInExPack_IL2CPP/6.0.755/'
+mkdir -p 'E:\deepseekharness\BeplnEx-mod-workplace\dreamecho-mod\tools\BepInExPack_IL2CPP' 'E:\deepseekharness\BeplnEx-mod-workplace\dreamecho-mod\tools\Cpp2IL'
+curl -L -o 'E:\deepseekharness\BeplnEx-mod-workplace\dreamecho-mod\tools\BepInExPack_IL2CPP\BepInExPack_IL2CPP-6.0.755.zip' 'https://thunderstore.io/package/download/BepInEx/BepInExPack_IL2CPP/6.0.755/'
 ```
 
 Expected: 下载完成，文件存在（约 40-90MB）。
@@ -40,7 +40,7 @@ Expected: 下载完成，文件存在（约 40-90MB）。
 - [ ] **Step 2: 下载 Cpp2IL 2022.0.7 Windows 版**
 
 ```bash
-curl -L -o 'E:\AI work\item-box\code\dreamecho-mod\tools\Cpp2IL\Cpp2IL-2022.0.7-Windows.exe' 'https://github.com/SamboyCoding/Cpp2IL/releases/download/2022.0.7/Cpp2IL-2022.0.7-Windows.exe'
+curl -L -o 'E:\deepseekharness\BeplnEx-mod-workplace\dreamecho-mod\tools\Cpp2IL\Cpp2IL-2022.0.7-Windows.exe' 'https://github.com/SamboyCoding/Cpp2IL/releases/download/2022.0.7/Cpp2IL-2022.0.7-Windows.exe'
 ```
 
 Expected: 下载完成，文件存在（约 100-200MB 自包含 .NET 单文件）。
@@ -48,8 +48,8 @@ Expected: 下载完成，文件存在（约 100-200MB 自包含 .NET 单文件�
 - [ ] **Step 3: 验证两个文件**
 
 ```bash
-ls -la 'E:\AI work\item-box\code\dreamecho-mod\tools\BepInExPack_IL2CPP' 'E:\AI work\item-box\code\dreamecho-mod\tools\Cpp2IL'
-unzip -l 'E:\AI work\item-box\code\dreamecho-mod\tools\BepInExPack_IL2CPP\BepInExPack_IL2CPP-6.0.755.zip' | head -30
+ls -la 'E:\deepseekharness\BeplnEx-mod-workplace\dreamecho-mod\tools\BepInExPack_IL2CPP' 'E:\deepseekharness\BeplnEx-mod-workplace\dreamecho-mod\tools\Cpp2IL'
+unzip -l 'E:\deepseekharness\BeplnEx-mod-workplace\dreamecho-mod\tools\BepInExPack_IL2CPP\BepInExPack_IL2CPP-6.0.755.zip' | head -30
 ```
 
 Expected: zip 列表显示 `winhttp.dll`、`doorstop_config.ini`、`BepInEx/` 目录；exe 存在且非 0 字节。
@@ -59,7 +59,7 @@ Expected: zip 列表显示 `winhttp.dll`、`doorstop_config.ini`、`BepInEx/` �
 `.gitignore` 追加 `tools/` 一行，然后：
 
 ```bash
-cd 'E:\AI work\item-box\code\dreamecho-mod' && git add .gitignore && git commit -m "chore: ignore tools directory"
+cd 'E:\deepseekharness\BeplnEx-mod-workplace\dreamecho-mod' && git add .gitignore && git commit -m "chore: ignore tools directory"
 ```
 
 ---
@@ -77,7 +77,7 @@ cd 'E:\AI work\item-box\code\dreamecho-mod' && git add .gitignore && git commit 
 - [ ] **Step 1: 解压 BepInExPack 到游戏根目录**
 
 ```bash
-cd 'E:\steam\steamapps\common\DreamEcho' && unzip -o 'E:\AI work\item-box\code\dreamecho-mod\tools\BepInExPack_IL2CPP\BepInExPack_IL2CPP-6.0.755.zip'
+cd 'E:\steam\steamapps\common\DreamEcho' && unzip -o 'E:\deepseekharness\BeplnEx-mod-workplace\dreamecho-mod\tools\BepInExPack_IL2CPP\BepInExPack_IL2CPP-6.0.755.zip'
 ```
 
 Expected: 游戏根目录出现 `winhttp.dll`、`doorstop_config.ini`、`BepInEx\`、`dotnet\`。
@@ -124,7 +124,7 @@ Expected: 三个文件都存在（门禁 doorstop + 核心 DLL）。
 - [ ] **Step 1: 运行 Cpp2IL 导出**
 
 ```bash
-cd 'E:\AI work\item-box\code\dreamecho-mod\tools\Cpp2IL' && ./Cpp2IL-2022.0.7-Windows.exe --game-path 'E:\steam\steamapps\common\DreamEcho' --output-as il2cppdumper --output-root 'E:\AI work\item-box\code\dreamecho-mod\il2cpp-dump'
+cd 'E:\deepseekharness\BeplnEx-mod-workplace\dreamecho-mod\tools\Cpp2IL' && ./Cpp2IL-2022.0.7-Windows.exe --game-path 'E:\steam\steamapps\common\DreamEcho' --output-as il2cppdumper --output-root 'E:\deepseekharness\BeplnEx-mod-workplace\dreamecho-mod\il2cpp-dump'
 ```
 
 Expected: 输出 `dump.cs`、`DummyDll\`、`script.json` 等。若报 metadata 版本不支持错误，记录错误信息并停止（回退方案见 Step 4）。
@@ -132,7 +132,7 @@ Expected: 输出 `dump.cs`、`DummyDll\`、`script.json` 等。若报 metadata �
 - [ ] **Step 2: 验证导出产物**
 
 ```bash
-ls 'E:\AI work\item-box\code\dreamecho-mod\il2cpp-dump' && ls 'E:\AI work\item-box\code\dreamecho-mod\il2cpp-dump\DummyDll' | head -20
+ls 'E:\deepseekharness\BeplnEx-mod-workplace\dreamecho-mod\il2cpp-dump' && ls 'E:\deepseekharness\BeplnEx-mod-workplace\dreamecho-mod\il2cpp-dump\DummyDll' | head -20
 ```
 
 Expected: `dump.cs` 存在且非空；`DummyDll\` 下包含 `Assembly-CSharp.dll`、`UnityEngine.dll`、`UnityEngine.CoreModule.dll` 等。
@@ -140,7 +140,7 @@ Expected: `dump.cs` 存在且非空；`DummyDll\` 下包含 `Assembly-CSharp.dll
 - [ ] **Step 3: 复制 DummyDll 到 BepInEx/interop/**
 
 ```bash
-cp 'E:\AI work\item-box\code\dreamecho-mod\il2cpp-dump\DummyDll\'*.dll 'E:\steam\steamapps\common\DreamEcho\BepInEx\interop\'
+cp 'E:\deepseekharness\BeplnEx-mod-workplace\dreamecho-mod\il2cpp-dump\DummyDll\'*.dll 'E:\steam\steamapps\common\DreamEcho\BepInEx\interop\'
 ```
 
 Expected: interop 目录出现全部代理 DLL。
@@ -150,7 +150,7 @@ Expected: interop 目录出现全部代理 DLL。
 改用 Il2CppDumper（Perfare 归档版 6.7.2，从 `https://github.com/Perfare/Il2CppDumper/releases/download/v6.7.2/Il2CppDumper-v6.7.2.zip` 下载），用法：
 
 ```bash
-cd 'E:\AI work\item-box\code\dreamecho-mod\tools\Il2CppDumper' && ./Il2CppDumper.exe 'E:\steam\steamapps\common\DreamEcho\GameAssembly.dll' 'E:\steam\steamapps\common\DreamEcho\DreamEchoes_Data\il2cpp_data\Metadata\global-metadata.dat' 'E:\AI work\item-box\code\dreamecho-mod\il2cpp-dump'
+cd 'E:\deepseekharness\BeplnEx-mod-workplace\dreamecho-mod\tools\Il2CppDumper' && ./Il2CppDumper.exe 'E:\steam\steamapps\common\DreamEcho\GameAssembly.dll' 'E:\steam\steamapps\common\DreamEcho\DreamEchoes_Data\il2cpp_data\Metadata\global-metadata.dat' 'E:\deepseekharness\BeplnEx-mod-workplace\dreamecho-mod\il2cpp-dump'
 ```
 
 若两者都失败：本任务中止，把错误信息回报用户（这是计划外风险，需要用户决策）。
@@ -160,7 +160,7 @@ cd 'E:\AI work\item-box\code\dreamecho-mod\tools\Il2CppDumper' && ./Il2CppDumper
 在 `il2cpp-dump\导出摘要.md` 记录：Unity 版本线索、导出工具与版本、`dump.cs` 大小、DummyDll 数量、以及用 grep 从 dump.cs 搜出的与数值相关的候选类名（如含 gold/money/coin/stat/attribute/level/exp 的类，各列出 5 个以内类全名，供后续阶段参考）。然后：
 
 ```bash
-cd 'E:\AI work\item-box\code\dreamecho-mod' && git add 'il2cpp-dump/导出摘要.md' && git commit -m "docs: IL2CPP 导出摘要与数值类线索"
+cd 'E:\deepseekharness\BeplnEx-mod-workplace\dreamecho-mod' && git add 'il2cpp-dump/导出摘要.md' && git commit -m "docs: IL2CPP 导出摘要与数值类线索"
 ```
 
 ---
@@ -241,7 +241,7 @@ public class Plugin : BasePlugin
 - [ ] **Step 3: 编译**
 
 ```bash
-cd 'E:\AI work\item-box\code\dreamecho-mod' && dotnet build src/DreamEchoMod/DreamEchoMod.csproj -c Release
+cd 'E:\deepseekharness\BeplnEx-mod-workplace\dreamecho-mod' && dotnet build src/DreamEchoMod/DreamEchoMod.csproj -c Release
 ```
 
 Expected: `Build succeeded`，产出 `src/DreamEchoMod/bin/Release/<runtime>/DreamEchoMod.dll`。若有引用解析错误（HintPath 找不到），检查 Task 3 Step 3 的 interop 复制是否完成。
@@ -249,7 +249,7 @@ Expected: `Build succeeded`，产出 `src/DreamEchoMod/bin/Release/<runtime>/Dre
 - [ ] **Step 4: 提交**
 
 ```bash
-cd 'E:\AI work\item-box\code\dreamecho-mod' && git add src/DreamEchoMod && git commit -m "feat: DreamEchoMod 插件骨架（IL2CPP interop 访问验证）"
+cd 'E:\deepseekharness\BeplnEx-mod-workplace\dreamecho-mod' && git add src/DreamEchoMod && git commit -m "feat: DreamEchoMod 插件骨架（IL2CPP interop 访问验证）"
 ```
 
 ---
@@ -267,7 +267,7 @@ cd 'E:\AI work\item-box\code\dreamecho-mod' && git add src/DreamEchoMod && git c
 - [ ] **Step 1: 复制插件到游戏 plugins 目录**
 
 ```bash
-cp 'E:\AI work\item-box\code\dreamecho-mod\src\DreamEchoMod\bin\Release\net8.0\DreamEchoMod.dll' 'E:\steam\steamapps\common\DreamEcho\BepInEx\plugins\'
+cp 'E:\deepseekharness\BeplnEx-mod-workplace\dreamecho-mod\src\DreamEchoMod\bin\Release\net8.0\DreamEchoMod.dll' 'E:\steam\steamapps\common\DreamEcho\BepInEx\plugins\'
 ```
 
 （`net8.0` 按实际 TargetFramework 调整）
@@ -308,7 +308,7 @@ Expected: 游戏进程被终止（验证完毕不留后台进程）。
 若 Step 3 四行关键日志全部出现 → MVP 成功，链路打通。在 `docs/链路验证结论.md` 记录：BepInEx 版本、运行时版本、Unity 版本线索、验证日志片段。提交：
 
 ```bash
-cd 'E:\AI work\item-box\code\dreamecho-mod' && git add docs && git commit -m "docs: 技术链路验证结论"
+cd 'E:\deepseekharness\BeplnEx-mod-workplace\dreamecho-mod' && git add docs && git commit -m "docs: 技术链路验证结论"
 ```
 
 若失败：保留日志，把失败原因回报用户，不提交结论文档。
@@ -329,7 +329,7 @@ cd 'E:\AI work\item-box\code\dreamecho-mod' && git add docs && git commit -m "do
 
 ```powershell
 $GameDir = 'E:\steam\steamapps\common\DreamEcho'
-$Proj = 'E:\AI work\item-box\code\dreamecho-mod'
+$Proj = 'E:\deepseekharness\BeplnEx-mod-workplace\dreamecho-mod'
 $Runtime = 'net8.0'
 dotnet build "$Proj\src\DreamEchoMod\DreamEchoMod.csproj" -c Release
 Copy-Item "$Proj\src\DreamEchoMod\bin\Release\$Runtime\DreamEchoMod.dll" "$GameDir\BepInEx\plugins\" -Force
@@ -343,7 +343,7 @@ Write-Host '部署完成: DreamEchoMod.dll -> BepInEx\plugins\'
 - [ ] **Step 3: 验证脚本可执行**
 
 ```bash
-cd 'E:\AI work\item-box\code\dreamecho-mod' && powershell -ExecutionPolicy Bypass -File build.ps1
+cd 'E:\deepseekharness\BeplnEx-mod-workplace\dreamecho-mod' && powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
 Expected: 构建成功 + `已复制` 输出，插件 DLL 时间戳更新。
@@ -351,7 +351,7 @@ Expected: 构建成功 + `已复制` 输出，插件 DLL 时间戳更新。
 - [ ] **Step 4: 提交**
 
 ```bash
-cd 'E:\AI work\item-box\code\dreamecho-mod' && git add build.ps1 README.md && git commit -m "docs: 构建部署脚本与 README"
+cd 'E:\deepseekharness\BeplnEx-mod-workplace\dreamecho-mod' && git add build.ps1 README.md && git commit -m "docs: 构建部署脚本与 README"
 ```
 
 ---

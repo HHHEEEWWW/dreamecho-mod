@@ -31,7 +31,7 @@
 
 ```
 E:\steam\steamapps\common\DreamEcho\            ← 游戏目录（安装 BepInEx 6 + 编译产物）
-E:\AI work\item-box\code\dreamecho-mod\        ← MOD 项目（新建，本工作区内）
+E:\deepseekharness\BeplnEx-mod-workplace\dreamecho-mod\        ← MOD 项目（新建，本工作区内）
   ├─ il2cpp-dump\           Il2CppDumper 导出结果（dump.cs + 代理 DLL）
   ├─ src\DreamEchoMod\      插件源码（.NET classlib，net6.0）
   └─ dist\                  编译产物（复制到游戏 BepInEx\plugins\）
