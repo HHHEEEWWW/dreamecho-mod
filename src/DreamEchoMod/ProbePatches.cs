@@ -31,6 +31,10 @@ public static class ProbePatches
         Patch(harmony, AccessTools.Method(t, "ApplyExtraDropLuckType",
             new[] { typeof(Echoes.GenralDrop), typeof(float) }), "ApplyLuck",
             postfix: nameof(PostfixApplyLuck));
+        // 数值链路：BuildMemoryAttr 收到的词缀配置（确认 T1 替换是否传递到数值 roll）
+        Patch(harmony, AccessTools.Method(t, "BuildMemoryAttr",
+            new[] { typeof(Echoes.ConceptMemoryAffix), typeof(Echoes.Core.Managers.EAffixType), typeof(bool) }), "Attr",
+            postfix: nameof(PostfixAttr));
 
         log.LogInfo("[Probe] diagnostic patches installed");
     }
@@ -63,6 +67,20 @@ public static class ProbePatches
         var ratio = __args.Length > 1 ? __args[1] : "?";
         _log.LogInfo($"[Probe] ApplyLuck({g}, ratio={ratio}) => {__result:0.###}");
     }
+
+    // BuildMemoryAttr 收到的词缀配置详情（数值链路验证）
+    private static void PostfixAttr(object[] __args)
+    {
+        if ((DateTime.UtcNow - _lastLog).TotalSeconds < 5) return;
+        _lastLog = DateTime.UtcNow;
+        if (__args.Length > 0 && __args[0] is Echoes.ConceptMemoryAffix a)
+        {
+            var max = __args.Length > 2 && __args[2] is bool b && b;
+            _log.LogInfo($"[Probe] Attr id={a.Id} Level={a.Level} MaxLevel={a.MaxLevel} Min={a.AttrMin:0.##} Max={a.AttrMax:0.##} maxRoll={max} content={Trunc(a.AttrContent)}");
+        }
+    }
+
+    private static string Trunc(string? s) => s == null ? "null" : (s.Length > 60 ? s[..60] : s);
 
     private static string Format(object? o)
     {

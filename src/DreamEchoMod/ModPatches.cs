@@ -26,6 +26,7 @@ public static class ModPatches
     public static ConfigEntry<bool> EnableT1Only { get; private set; } = null!;
     public static ConfigEntry<int> MinMemoryLevel { get; private set; } = null!;
     public static ConfigEntry<string> DropPacks { get; private set; } = null!;
+    public static ConfigEntry<string> RarityWeights { get; private set; } = null!;
 
     public static void Install(ManualLogSource log, ConfigFile config)
     {
@@ -37,11 +38,21 @@ public static class ModPatches
             "装备生成等级下限（配合 T1Only 通过等级校验，防止装备生成失败）。1=原版。");
         DropPacks = config.Bind("掉落", "DropMultiplierPacks", "701:10,711:2",
             "掉落放大配置：包ID:倍数,包ID:倍数。701=装备碎片；711=车票；721=记忆装备(勿放大)；741=金币。装备:车票默认 10:2=5:1。");
+        RarityWeights = config.Bind("稀有度", "RarityWeights", "100,100,100,100,100",
+            "掉落稀有度权重（逗号分隔，按普通→稀有顺序）。平均权重=各稀有度等概率；空=原版。");
 
         var harmony = new Harmony("com.dreamecho.mod");
         var t = typeof(Echoes.Core.Utility.DropHelper);
 
-        // 1. T1 词缀：Get(id, level) 返回后替换为最高档
+        // 0. 稀有度倒挂：RandomDrop 的权重数组替换（普通→稀有递增）
+        var randomDrop = AccessTools.Method(t, "RandomDrop",
+            new[] { typeof(List<int>), typeof(Echoes.Core.Utility.DropHelper.EDropLuckyType), typeof(List<int>) });
+        if (randomDrop == null) { log.LogError("[Mod] FAILED find DropHelper.RandomDrop"); }
+        else
+        {
+            harmony.Patch(randomDrop, prefix: new HarmonyMethod(typeof(ModPatches).GetMethod(nameof(RandomDropPrefix), All)!));
+            log.LogInfo("[Mod] patched DropHelper.RandomDrop (RarityInvert)");
+        }
         var affixGet = AccessTools.Method(typeof(Echoes.Config.TConceptMemoryAffix), "Get",
             new[] { typeof(int), typeof(int) });
         if (affixGet == null) { log.LogError("[Mod] FAILED find TConceptMemoryAffix.Get"); }
@@ -88,6 +99,42 @@ public static class ModPatches
         if ((DateTime.UtcNow - _lastLog).TotalSeconds < 3) return;
         _lastLog = DateTime.UtcNow;
         _log.LogInfo(msg);
+    }
+
+    // ── 稀有度倒挂：把权重数组替换为配置的「普通→稀有」递增权重 ──
+    [ThreadStatic] private static bool _rarityPatched;
+
+    private static void RandomDropPrefix(List<int> weights)
+    {
+        if (weights == null || weights.Count == 0) return;
+        if (_rarityPatched) return; // 防 RandomDrop 内部调 RollDropWeightIndex 再触发（前缀快照）
+        var cfg = RarityWeights.Value;
+        if (string.IsNullOrWhiteSpace(cfg)) return;
+
+        var parts = cfg.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length != weights.Count)
+        {
+            LogRateLimited($"[Mod] RarityWeights 数量({parts.Length})与权重数量({weights.Count})不符，忽略");
+            return;
+        }
+        var vals = new List<int>();
+        foreach (var p in parts)
+            if (int.TryParse(p, out var v) && v >= 0) vals.Add(v);
+        if (vals.Count != weights.Count) return;
+
+        _rarityPatched = true;
+        try
+        {
+            var sb = new System.Text.StringBuilder();
+            for (var i = 0; i < weights.Count; i++) { if (i > 0) sb.Append(','); sb.Append(weights[i]); }
+            var before = sb.ToString();
+            for (var i = 0; i < weights.Count; i++) weights[i] = vals[i];
+            LogRateLimited($"[Mod] Rarity {before} -> {string.Join(",", vals)}");
+        }
+        finally
+        {
+            _rarityPatched = false;
+        }
     }
 
     // ── T1 词缀：把返回词缀替换为该词缀最高档（MaxLevel）配置行 ──
