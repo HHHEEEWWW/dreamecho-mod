@@ -134,20 +134,49 @@ public static class ModPatches
     }
 
     // ── 掉落翻倍（每包独立倍数）──
-    // 注意：CreateDrop 可能被嵌套调用（掉落内部再触发），嵌套时跳过放大，防止指数爆炸
-    private static int _dropDepth;
+    // 两个陷阱都要防：
+    // 1) CreateDrop 嵌套调用 → 深度保护（仅最外层放大）
+    // 2) 游戏缓存/复用同一个列表对象 → Prefix 放大后 Postfix 必须恢复原状（否则永久累积指数爆炸）
+    [ThreadStatic] private static int _dropDepth;
+    [ThreadStatic] private static int _addedCount;
 
     private static void CreateDropPrefix(List<int> packIdList)
     {
         _dropDepth++;
-        if (_dropDepth != 1)
-        {
-            // 内层调用：不放大（防止 8->18->110->... 指数爆炸）
-            return;
-        }
+        if (_dropDepth != 1) return; // 内层调用：不放大
+
+        if (packIdList == null || packIdList.Count == 0) return;
+
         try
         {
-            Amplify(packIdList);
+            // 解析 "id:mult,id:mult"
+            var mults = new Dictionary<int, int>();
+            foreach (var part in DropPacks.Value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                var seg = part.Split(':');
+                if (seg.Length != 2) continue;
+                if (!int.TryParse(seg[0].Trim(), out var id) || id <= 0) continue;
+                if (!int.TryParse(seg[1].Trim(), out var m) || m <= 1) continue;
+                mults[id] = m;
+            }
+            if (mults.Count == 0) return;
+
+            _addedCount = 0;
+            var originalCount = packIdList.Count;
+            for (var i = 0; i < originalCount; i++)
+            {
+                if (mults.TryGetValue(packIdList[i], out var m))
+                {
+                    for (var k = 0; k < m - 1; k++)
+                    {
+                        packIdList.Add(packIdList[i]);
+                        _addedCount++;
+                    }
+                }
+            }
+
+            if (_addedCount > 0)
+                LogRateLimited($"[Mod] Drop +{_addedCount} packs ({originalCount}->{packIdList.Count})");
         }
         catch (Exception e)
         {
@@ -155,36 +184,15 @@ public static class ModPatches
         }
     }
 
-    private static void CreateDropPostfix()
+    private static void CreateDropPostfix(List<int> packIdList)
     {
+        if (_dropDepth == 1 && _addedCount > 0 && packIdList != null)
+        {
+            // 恢复列表原状（删除本次添加的末尾元素），防止游戏缓存放大后的列表导致指数爆炸
+            for (var i = 0; i < _addedCount && packIdList.Count > 0; i++)
+                packIdList.RemoveAt(packIdList.Count - 1);
+            _addedCount = 0;
+        }
         if (_dropDepth > 0) _dropDepth--;
-    }
-
-    private static void Amplify(List<int> packIdList)
-    {
-        if (packIdList == null || packIdList.Count == 0) return;
-
-        // 解析 "id:mult,id:mult"
-        var mults = new Dictionary<int, int>();
-        foreach (var part in DropPacks.Value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            var seg = part.Split(':');
-            if (seg.Length != 2) continue;
-            if (!int.TryParse(seg[0].Trim(), out var id) || id <= 0) continue;
-            if (!int.TryParse(seg[1].Trim(), out var m) || m <= 1) continue;
-            mults[id] = m;
-        }
-        if (mults.Count == 0) return;
-
-        var toAdd = new List<int>();
-        for (var i = 0; i < packIdList.Count; i++)
-        {
-            if (mults.TryGetValue(packIdList[i], out var m))
-                for (var k = 0; k < m - 1; k++) toAdd.Add(packIdList[i]);
-        }
-        foreach (var id in toAdd) packIdList.Add(id);
-
-        if (toAdd.Count > 0)
-            LogRateLimited($"[Mod] Drop +{toAdd.Count} packs ({packIdList.Count - toAdd.Count}->{packIdList.Count})");
     }
 }
