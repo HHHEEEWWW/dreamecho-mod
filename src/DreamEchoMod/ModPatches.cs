@@ -11,46 +11,63 @@ namespace DreamEchoMod;
 
 /// <summary>
 /// 正式修改功能：
-/// 1) MinDropLevel：把掉落等级提升到指定值（默认 81）→ 词缀按等级需求自然可选最高档（T1），
-///    完全符合游戏规则（等价于在高等级地图刷装备），不破坏装备生成校验。
-/// 2) DropMultiplier：指定掉落包数量翻倍（Prefix 扩展 packIdList，保持构成）。
-/// 全部由 BepInEx 配置文件控制（cfg），无需改代码即可调参。
+/// 1) T1Only：词缀强制最高档（Get postfix 替换 MaxLevel 行）
+/// 2) MinMemoryLevel：装备生成等级提升到 81（让 T1 词缀通过装备等级校验，防止装备生成失败）
+/// 3) DropMultiplier：每包独立倍数放大（格式 "包ID:倍数,包ID:倍数"），保持构成可控
+/// 日志全部限频（防止刷屏卡死）。
 /// </summary>
 public static class ModPatches
 {
     private static ManualLogSource _log = null!;
     private const BindingFlags All = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance;
+    private static DateTime _lastLog = DateTime.MinValue;
 
     // ── 配置 ──
-    public static ConfigEntry<int> MinDropLevel { get; private set; } = null!;
+    public static ConfigEntry<bool> EnableT1Only { get; private set; } = null!;
+    public static ConfigEntry<int> MinMemoryLevel { get; private set; } = null!;
     public static ConfigEntry<string> DropPacks { get; private set; } = null!;
-    public static ConfigEntry<float> DropMultiplier { get; private set; } = null!;
 
     public static void Install(ManualLogSource log, ConfigFile config)
     {
         _log = log;
 
-        MinDropLevel = config.Bind("词缀", "MinDropLevel", 81,
-            "掉落等级下限（词缀 T 档按等级需求选择；81=T1 最高档可出）。1=原版。");
-        DropPacks = config.Bind("掉落", "DropMultiplierPacks", "701,711",
-            "要放大的掉落包 ID 列表（逗号分隔）。701=装备碎片(600xx)；711=车票相关(8xxxx)；721=记忆装备(勿放大，会卡)；741=金币。");
-        DropMultiplier = config.Bind("掉落", "DropMultiplier", 10f,
-            "上述掉落包的掉落数量倍数（1=原版）。");
+        EnableT1Only = config.Bind("词缀", "T1Only", true,
+            "词缀强制最高档（T1）。false=原版。");
+        MinMemoryLevel = config.Bind("词缀", "MinMemoryLevel", 81,
+            "装备生成等级下限（配合 T1Only 通过等级校验，防止装备生成失败）。1=原版。");
+        DropPacks = config.Bind("掉落", "DropMultiplierPacks", "701:10,711:2",
+            "掉落放大配置：包ID:倍数,包ID:倍数。701=装备碎片；711=车票；721=记忆装备(勿放大)；741=金币。装备:车票默认 10:2=5:1。");
 
         var harmony = new Harmony("com.dreamecho.mod");
         var t = typeof(Echoes.Core.Utility.DropHelper);
 
-        // 1. 掉落等级提升（词缀 T1 按规则可出）
-        var getDrop = AccessTools.Method(t, "GetDrop",
-            new[] { typeof(int), typeof(int), typeof(int).MakeByRefType(), typeof(int), typeof(HashSet<int>), typeof(Dictionary<int, List<int>>) });
-        if (getDrop == null) { log.LogError("[Mod] FAILED find DropHelper.GetDrop"); }
+        // 1. T1 词缀：Get(id, level) 返回后替换为最高档
+        var affixGet = AccessTools.Method(typeof(Echoes.Config.TConceptMemoryAffix), "Get",
+            new[] { typeof(int), typeof(int) });
+        if (affixGet == null) { log.LogError("[Mod] FAILED find TConceptMemoryAffix.Get"); }
         else
         {
-            harmony.Patch(getDrop, prefix: new HarmonyMethod(typeof(ModPatches).GetMethod(nameof(GetDropPrefix), All)!));
-            log.LogInfo("[Mod] patched DropHelper.GetDrop (MinDropLevel)");
+            harmony.Patch(affixGet, postfix: new HarmonyMethod(typeof(ModPatches).GetMethod(nameof(AffixGetPostfix), All)!));
+            log.LogInfo("[Mod] patched TConceptMemoryAffix.Get (T1Only)");
         }
 
-        // 2. 掉落翻倍：CreateDrop 两个重载都 patch
+        // 2. 装备等级提升（让 T1 通过校验）
+        var buildRandom = AccessTools.Method(t, "BuildMemoryRandom",
+            new[] { typeof(List<Echoes.ConceptMemoryAffixPack>), typeof(List<int>), typeof(int), typeof(int), typeof(HashSet<int>), typeof(HashSet<int>) });
+        if (buildRandom != null)
+        {
+            harmony.Patch(buildRandom, prefix: new HarmonyMethod(typeof(ModPatches).GetMethod(nameof(BuildMemoryRandomPrefix), All)!));
+            log.LogInfo("[Mod] patched DropHelper.BuildMemoryRandom (MinMemoryLevel)");
+        }
+        var buildMemory = AccessTools.Method(t, "BuildMemory",
+            new[] { typeof(Echoes.Drop), typeof(int), typeof(List<Echoes.HomeShopTargetedBuyOrder>), typeof(HashSet<int>) });
+        if (buildMemory != null)
+        {
+            harmony.Patch(buildMemory, prefix: new HarmonyMethod(typeof(ModPatches).GetMethod(nameof(BuildMemoryPrefix), All)!));
+            log.LogInfo("[Mod] patched DropHelper.BuildMemory (MinMemoryLevel)");
+        }
+
+        // 3. 掉落翻倍（每包独立倍数）：CreateDrop 两个重载
         foreach (var sig in new[]
         {
             new[] { typeof(List<int>), typeof(Vector3), typeof(float) },
@@ -64,37 +81,70 @@ public static class ModPatches
         }
     }
 
-    // ── 掉落等级提升：词缀 T 档按等级需求自然提升 ──
-    private static void GetDropPrefix(ref int dropLevel)
+    private static void LogRateLimited(string msg)
     {
-        if (MinDropLevel.Value > 1 && dropLevel < MinDropLevel.Value)
+        if ((DateTime.UtcNow - _lastLog).TotalSeconds < 3) return;
+        _lastLog = DateTime.UtcNow;
+        _log.LogInfo(msg);
+    }
+
+    // ── T1 词缀：把返回词缀替换为该词缀最高档（MaxLevel）配置行 ──
+    private static void AffixGetPostfix(ref Echoes.ConceptMemoryAffix __result,
+        Echoes.Config.TConceptMemoryAffix __instance)
+    {
+        if (!EnableT1Only.Value || __result == null || __result.MaxLevel <= 1) return;
+        if (__result.Level >= __result.MaxLevel) return;
+
+        var best = __instance.Get(__result.Id, __result.MaxLevel);
+        if (best != null && best.Level == __result.MaxLevel)
         {
-            _log.LogInfo($"[Mod] dropLevel {dropLevel} -> {MinDropLevel.Value} (T1 词缀可出)");
-            dropLevel = MinDropLevel.Value;
+            LogRateLimited($"[Mod] T1: affix {__result.Id} L{__result.Level}->L{best.Level}");
+            __result = best;
         }
     }
 
-    // ── 掉落翻倍：扩展 packIdList 中目标包的数量 ──
+    // ── 装备等级提升 ──
+    private static void BuildMemoryRandomPrefix(ref int memoryLevel, ref int MinLevel)
+    {
+        if (MinMemoryLevel.Value > 1)
+        {
+            if (memoryLevel < MinMemoryLevel.Value) memoryLevel = MinMemoryLevel.Value;
+            if (MinLevel < MinMemoryLevel.Value) MinLevel = MinMemoryLevel.Value;
+        }
+    }
+
+    private static void BuildMemoryPrefix(ref int memoryLevel)
+    {
+        if (MinMemoryLevel.Value > 1 && memoryLevel < MinMemoryLevel.Value)
+            memoryLevel = MinMemoryLevel.Value;
+    }
+
+    // ── 掉落翻倍（每包独立倍数）──
     private static void CreateDropPrefix(List<int> packIdList)
     {
-        if (DropMultiplier.Value <= 1f || packIdList == null || packIdList.Count == 0) return;
+        if (packIdList == null || packIdList.Count == 0) return;
 
-        var targets = DropPacks.Value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(s => int.TryParse(s, out var v) ? v : -1).Where(v => v > 0).ToHashSet();
-        if (targets.Count == 0) return;
-
-        var extra = (int)Math.Floor(DropMultiplier.Value) - 1;
-        if (extra <= 0) return;
+        // 解析 "id:mult,id:mult"
+        var mults = new Dictionary<int, int>();
+        foreach (var part in DropPacks.Value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var seg = part.Split(':');
+            if (seg.Length != 2) continue;
+            if (!int.TryParse(seg[0].Trim(), out var id) || id <= 0) continue;
+            if (!int.TryParse(seg[1].Trim(), out var m) || m <= 1) continue;
+            mults[id] = m;
+        }
+        if (mults.Count == 0) return;
 
         var toAdd = new List<int>();
         for (var i = 0; i < packIdList.Count; i++)
         {
-            if (targets.Contains(packIdList[i]))
-                for (var k = 0; k < extra; k++) toAdd.Add(packIdList[i]);
+            if (mults.TryGetValue(packIdList[i], out var m))
+                for (var k = 0; k < m - 1; k++) toAdd.Add(packIdList[i]);
         }
         foreach (var id in toAdd) packIdList.Add(id);
 
         if (toAdd.Count > 0)
-            _log.LogInfo($"[Mod] Drop x{extra + 1}: added {toAdd.Count} packs to {packIdList.Count - toAdd.Count} -> {packIdList.Count}");
+            LogRateLimited($"[Mod] Drop +{toAdd.Count} packs ({packIdList.Count - toAdd.Count}->{packIdList.Count})");
     }
 }
