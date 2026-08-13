@@ -44,7 +44,17 @@ public static class ModPatches
         var harmony = new Harmony("com.dreamecho.mod");
         var t = typeof(Echoes.Core.Utility.DropHelper);
 
-        // 1. 装备包掉落等级提升（词缀 T1 按规则可出，碎片/金币包不受影响）
+        // 1. 词缀生成等级提升：BuildMemoryRandom 的 memoryLevel 直接决定词缀档位（实测恒 20）
+        var bmr = AccessTools.Method(t, "BuildMemoryRandom",
+            new[] { typeof(List<Echoes.ConceptMemoryAffixPack>), typeof(List<int>), typeof(int), typeof(int), typeof(HashSet<int>), typeof(HashSet<int>) });
+        if (bmr == null) { log.LogError("[Mod] FAILED find DropHelper.BuildMemoryRandom"); }
+        else
+        {
+            harmony.Patch(bmr, prefix: new HarmonyMethod(typeof(ModPatches).GetMethod(nameof(BuildMemoryRandomPrefix), All)!));
+            log.LogInfo("[Mod] patched DropHelper.BuildMemoryRandom (MemoryLevel)");
+        }
+
+        // 1b. 装备包掉落等级提升（备用入口）
         var getDrop = AccessTools.Method(t, "GetDrop",
             new[] { typeof(int), typeof(int), typeof(int).MakeByRefType(), typeof(int), typeof(HashSet<int>), typeof(Dictionary<int, List<int>>) });
         if (getDrop == null) { log.LogError("[Mod] FAILED find DropHelper.GetDrop"); }
@@ -85,6 +95,19 @@ public static class ModPatches
         if ((DateTime.UtcNow - _lastLog).TotalSeconds < 3) return;
         _lastLog = DateTime.UtcNow;
         _log.LogInfo(msg);
+    }
+
+    // ── 词缀生成等级提升：memoryLevel 直接决定词缀档位 ──
+    private static void BuildMemoryRandomPrefix(ref int memoryLevel, ref int MinLevel)
+    {
+        if (MemoryDropLevel.Value <= 1) return;
+        if (memoryLevel < MemoryDropLevel.Value)
+        {
+            LogRateLimited($"[Mod] memoryLevel {memoryLevel}->{MemoryDropLevel.Value}");
+            memoryLevel = MemoryDropLevel.Value;
+        }
+        if (MinLevel < MemoryDropLevel.Value)
+            MinLevel = MemoryDropLevel.Value;
     }
 
     // ── 装备包掉落等级提升：词缀 T 档按等级需求自然提升 ──
