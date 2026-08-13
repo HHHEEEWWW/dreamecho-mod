@@ -18,7 +18,10 @@ public class Plugin : BasePlugin
         Log.LogInfo($"[DreamEchoMod] Persistent path: {UnityEngine.Application.persistentDataPath}");
         Log.LogInfo($"[DreamEchoMod] IL2CPP interop access OK");
 
-        // 探针：观察掉落/词缀参数（正式功能实现前使用）
+        // 正式修改功能（T1 词缀 + 掉落翻倍，配置文件可控）
+        ModPatches.Install(Log, Config);
+
+        // 探针：观察掉落/词缀参数（正式功能实现前使用；可配置关闭）
         ProbePatches.Install(Log);
     }
 }

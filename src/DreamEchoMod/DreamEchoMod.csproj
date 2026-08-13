@@ -28,6 +28,10 @@
       <HintPath>E:\steam\steamapps\common\DreamEcho\BepInEx\interop\Assembly-CSharp.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="Assembly-CSharp-firstpass">
+      <HintPath>E:\steam\steamapps\common\DreamEcho\BepInEx\interop\Assembly-CSharp-firstpass.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="Il2CppSystem.Core">
       <HintPath>E:\steam\steamapps\common\DreamEcho\BepInEx\interop\Il2CppSystem.Core.dll</HintPath>
       <Private>false</Private>
