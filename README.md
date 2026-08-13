@@ -32,8 +32,8 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 
 | 节 | 键 | 默认值 | 说明 |
 |---|---|---|---|
-| 词缀 | `MemoryDropLevel` | `81` | 装备包掉落等级下限（81=T1 最高档可出；1=原版） |
-| 词缀 | `MemoryDropPacks` | `721` | 视为装备包并提升掉落等级的包 ID 列表（逗号分隔） |
+| 词缀 | `MemoryDropLevel` | `81` | 【已停用】原等级修改方案（IL2CPP ref 修改未传回且疑致 UI 卡死）；T1 由 postfix 强制最高档实现 |
+| 词缀 | `MemoryDropPacks` | `721` | 【已停用】同上 |
 | 掉落 | `DropMultiplierPacks` | `701:10,711:2` | 包ID:倍数。701=装备碎片；711=车票；721=记忆装备(勿放大)；741=金币 |
 | 稀有度 | `RarityWeights` | `100` | 单值=所有档位平均化；多值=按档位逐个指定；空=原版 |
 

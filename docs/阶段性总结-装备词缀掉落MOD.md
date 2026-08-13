@@ -1,6 +1,6 @@
 # 阶段性总结：梦境回响 DreamEcho MOD
 
-- 日期：2026-08-13
+- 日期：2026-08-14（更新：T1 方案 #4 验证成功 + 0.1.1 兼容验证完成）
 - 阶段：装备/掉落/词缀系统 MOD 开发（中期，进行中）
 - 项目：`E:\deepseekharness\BeplnEx-mod-workplace\dreamecho-mod`（git main）
 
@@ -11,8 +11,8 @@
 为 Steam 游戏《梦境回响 DreamEcho》（AppID 3226060，Unity 2022.3.62 IL2CPP）开发 BepInEx 6 MOD，聚焦：
 
 1. ✅ 掉落数量提升（碎片 ×10、车票 ×2 = 5:1）
-2. ⚠️ 词缀只出最高 T 级（T1）——**进行中，已多次尝试，见 §4**
-3. ⏳ 稀有度调整（平均化已上线，3:1 精确比例待定）
+2. ✅ 词缀只出最高 T 级（T1）——**方案 #4 验证成功（2026-08-14）**
+3. ⚠️ 稀有度调整（平均化已上线，3:1 精确比例待定）
 4. ⏳ 一键分解（含传奇）——未开始
 
 ## 2. 已完成 ✅
@@ -75,21 +75,24 @@ BuildMemoryAttr(affix, type, max)           词缀属性生成
 - **`BuildMemoryRandom` 的 `memoryLevel` 参数是词缀档位选择的输入**（实测恒 20/40，疑似与难度/车票等级相关）
 - 词缀等级需求（req/MinLevelRange）：T1=81（最高），T7=1（最低）
 
-## 4. 进行中 ⚠️：T1 词缀（全部尝试记录）
+## 4. T1 词缀：攻坚完成 ✅（方案 #4 成功，2026-08-14 实测）
 
 | # | 方案 | 结果 | 结论 |
 |---|---|---|---|
 | 1 | `TConceptMemoryAffix.Get` postfix 替换为 MaxLevel 档 | **装备 null/词缀全丢** + 标签变但数值不变 | ✗ postfix 内调原方法无限递归（已修）；替换对象不影响数值 roll |
 | 2 | `GetDrop` dropLevel→81 | **碎片包 null**（高级图稀有度过滤/条目限制） | ✗ 影响掉落条目选择 |
-| 3 | `BuildMemoryRandom` memoryLevel→81（prefix ref） | **词缀全丢**（MinLevel 同改导致词缀包过滤）；且 ref 修改疑未生效（prefix 日志 0 条） | ✗/疑 |
-| 4 | `BuildMemoryRandom` postfix 替换返回词缀为 MaxLevel 档 + 只改 memoryLevel | **部署中，待验证** | ？ |
+| 3 | `BuildMemoryRandom` memoryLevel→81（prefix ref） | **词缀全丢**（MinLevel 同改导致词缀包过滤）；且 ref 修改疑未生效 | ✗/疑 |
+| 4 | **`BuildMemoryRandom` postfix 替换返回词缀为 MaxLevel 档**（不动任何 level 参数） | ✅ **词缀全最高档，数值/标签都变**，装备正常生成 | ✅ **成功，正式方案** |
 
-**当前待验证方案 #4**：BMR postfix 直接替换选中词缀（数值 roll 的输入对象）→ 理论上数值+标签都变 T1。
+**方案 #4 实测证据（日志）**：
+- 单局 62 次替换：`affix 50001 L1→L5`、`10002 L4→L7`、`20013 L1→L7`、`22003 L1→L7`…（MaxLevel 7/5/0，0=固定词缀不替换）
+- 替换对象 = BMR 返回词缀（数值 roll 的输入对象）→ 数值+标签同时变 T1
+- **等级修改（memoryLevel/dropLevel→81）已全部停用**：探针证实 IL2CPP `ref int` 修改**未传回**（prefix 改后探针仍见原值 60/70），且 81 级装备注入低级图疑为 UI 卡死诱因（偶发，ESC 无法返回）；T1 效果与等级修改无关，postfix 独立完成
+- memoryLevel 实测分布：81（217 次）/ 70（69 次）/ 60（11 次）——随难度/车票等级变化，非恒 20/40
 
-**关键疑点**：
-- Harmony 对 IL2CPP 值类型参数（`ref int`）的修改**可能无效**——需通过无条件日志确认 prefix 是否执行、修改是否传回
-- MinLevel 修改疑似导致词缀包过滤（词缀全丢）——已移除
-- 词缀数值与显示可能走不同链路（显示查 Get、数值 roll 用 BMR 返回对象）——postfix 方案正对数值链路
+**关键结论（踩坑沉淀）**：
+- HarmonyX IL2CPP 下：**prefix 的 `ref` 值类型参数修改无效**；**postfix 的 `ref` 返回值修改有效**（`__result` 写回）→ 改值走 postfix/返回值，不要依赖 prefix ref
+- 词缀显示与数值共用 BMR 返回对象，替换该对象即可两端一致
 
 ## 5. 踩坑记录（教训）
 
@@ -98,16 +101,17 @@ BuildMemoryAttr(affix, type, max)           词缀属性生成
    - **列表被游戏缓存**：Prefix 修改传入列表永久累积（8→18→110→1014→10022）→ **Postfix 恢复列表原状**（关键！）
 2. **Postfix 内调用原方法 = 无限递归** → 递归保护标志
 3. **日志刷屏卡死**：探针/修改日志量大（6.8万行/局）→ 全部限频（3-5 秒 1 条）
-4. **IL2CPP 参数修改存疑**：`ref int` prefix 修改可能静默无效 → 用无条件日志验证
-5. **BepInEx 自动适配游戏更新**：buildid 更新后 interop 自动重新生成（内置 Cpp2IL 支持 metadata 31.1）
+4. **IL2CPP prefix ref 修改无效（已确认）**：无条件日志证实 prefix 执行但修改未传回原方法（探针仍见原值）；**postfix 的 ref 返回值修改有效** → 改值统一走 postfix/返回值链路
+5. **BepInEx 自动适配游戏更新**：buildid 更新后 interop 自动重新生成（内置 Cpp2IL 支持 metadata 31.1）。**0.1.1 实测（2026-08-14）**：buildid 24711309→24718487，interop 自动重建，8 个补丁全部安装成功，**MOD 零改动兼容**
 6. **Luban 配置类用属性非字段**；`List<int>` 是 `Il2CppSystem.Collections.Generic.List`（不实现 LINQ）
+7. **UI 偶发卡死（ESC 无法返回、页面可操作）**：0.1.1 更新后新版（停等级修改）多轮实测未复现；高度怀疑与 81 级装备数据注入相关，已随等级修改停用消除
 
 ## 6. 当前配置（`BepInEx/config/com.dreamecho.mod.cfg`）
 
 ```ini
 [词缀]
-MemoryDropLevel = 81        # 装备等级下限（当前方案 #4 待验证）
-MemoryDropPacks = 721       # 视为装备包的包 ID
+MemoryDropLevel = 81        # 【已停用】原等级修改方案（ref 未传回+疑致 UI 卡死），T1 由 postfix 实现
+MemoryDropPacks = 721       # 【已停用】同上
 [掉落]
 DropMultiplierPacks = 701:10,711:2   # 装备碎片×10 : 车票×2 = 5:1
 [稀有度]
@@ -116,8 +120,9 @@ RarityWeights = 100         # 单值=所有档位等概率（平均化）
 
 ## 7. 待办
 
-- [ ] **验证方案 #4**（BMR postfix T1 替换）——游戏内实测装备词缀
-- [ ] 确认 memoryLevel 来源（车票等级？难度？）——用户提示"被车票等级限制"
+- [x] **T1 方案 #4 验证**（BMR postfix 替换）——✅ 成功，全最高档
+- [x] **0.1.1 补丁兼容**（buildid 24718487）——✅ 零改动兼容，8 补丁全装
+- [ ] 确认 memoryLevel 来源（车票等级？难度？）——观察日志已有 60/70/81 分布，可结合车票等级对照
 - [ ] 一键分解功能（含传奇）——需要定位分解逻辑（背包 UI 相关类）
 - [ ] 稀有度精确比例（若需 3:1 而非平均化，配置多值权重）
 - [ ] 高级图碎片包确认（630xx 是否替代 701）
