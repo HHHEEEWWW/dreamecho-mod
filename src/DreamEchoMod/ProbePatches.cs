@@ -27,14 +27,21 @@ public static class ProbePatches
             new[] { typeof(List<int>), typeof(Echoes.Core.Utility.DropHelper.EDropLuckyType), typeof(List<int>) }), "RandomDrop");
         Patch(harmony, AccessTools.Method(t, "RollDropWeightIndex",
             new[] { typeof(List<int>), typeof(List<int>), typeof(bool), typeof(bool), typeof(float) }), "RollWeight");
+        // 掉落数量修饰（按掉落组）：观察 Id/ratio/返回值
+        Patch(harmony, AccessTools.Method(t, "ApplyExtraDropLuckType",
+            new[] { typeof(Echoes.GenralDrop), typeof(float) }), "ApplyLuck",
+            postfix: nameof(PostfixApplyLuck));
 
         log.LogInfo("[Probe] diagnostic patches installed");
     }
 
-    private static void Patch(Harmony harmony, MethodBase? original, string tag)
+    private static void Patch(Harmony harmony, MethodBase? original, string tag, string? postfix = null)
     {
         if (original == null) { _log.LogError($"[Probe] FAILED find {tag}"); return; }
-        harmony.Patch(original, prefix: new HarmonyMethod(typeof(ProbePatches).GetMethod(nameof(GenericPrefix), All)!));
+        var post = postfix != null ? new HarmonyMethod(typeof(ProbePatches).GetMethod(postfix, All)!) : null;
+        harmony.Patch(original,
+            prefix: new HarmonyMethod(typeof(ProbePatches).GetMethod(nameof(GenericPrefix), All)!),
+            postfix: post);
         _log.LogInfo($"[Probe] patched {tag}");
     }
 
@@ -44,6 +51,17 @@ public static class ProbePatches
         _lastLog = DateTime.UtcNow;
         var argStr = string.Join(" | ", __args.Select((a, i) => $"[{i}]={Format(a)}"));
         _log.LogInfo($"[Probe] {__originalMethod.Name}({argStr})");
+    }
+
+    private static void PostfixApplyLuck(float __result, object[] __args)
+    {
+        if ((DateTime.UtcNow - _lastLog).TotalSeconds < 5) return;
+        _lastLog = DateTime.UtcNow;
+        var g = __args.Length > 0 && __args[0] is Echoes.GenralDrop gd
+            ? $"Id={gd.Id},Name={gd.PackName},Type={gd.PackType},Luck={gd.LuckType}"
+            : "?";
+        var ratio = __args.Length > 1 ? __args[1] : "?";
+        _log.LogInfo($"[Probe] ApplyLuck({g}, ratio={ratio}) => {__result:0.###}");
     }
 
     private static string Format(object? o)
