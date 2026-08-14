@@ -63,6 +63,11 @@ public static class ProbePatches
             _log.LogInfo("[Probe] patched UIManager.ProcessKeyInput");
         }
 
+        // 卸下装备链路观察（排查"已装备标签残留"问题）
+        Patch(harmony, AccessTools.Method(typeof(Echoes.UI.UIEquipComponent), "Unequip",
+            new[] { typeof(Echoes.Core.Enum.EMemorySlotType) }), "EquipUnequip");
+        Patch(harmony, AccessTools.Method(typeof(Echoes.UI.UIEquipMemoryPage), "UnEquip", Type.EmptyTypes), "MemoryPageUnEquip");
+
         log.LogInfo("[Probe] diagnostic patches installed");
     }
 

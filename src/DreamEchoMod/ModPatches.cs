@@ -34,6 +34,12 @@ public static class ModPatches
     public static ConfigEntry<string> DisassembleRarities { get; private set; } = null!;
     public static ConfigEntry<bool> AutoDisassembleOnEnter { get; private set; } = null!;
     public static ConfigEntry<string> AutoDisassembleKey { get; private set; } = null!;
+    public static ConfigEntry<bool> EnableT1 { get; private set; } = null!;
+    public static ConfigEntry<bool> EnableDropMultiplier { get; private set; } = null!;
+    public static ConfigEntry<bool> EnableRarityAvg { get; private set; } = null!;
+    public static ConfigEntry<bool> EnableAutoAbsorb { get; private set; } = null!;
+    public static ConfigEntry<bool> EnableDisassemble { get; private set; } = null!;
+    public static ConfigEntry<string> RepairKey { get; private set; } = null!;
 
     // 自动拾取运行时状态
     private static float _lastAbsorbTime = float.MinValue;
@@ -63,6 +69,13 @@ public static class ModPatches
             "进入分解模式（点分解按钮）时自动分解所有目标稀有度记忆。");
         AutoDisassembleKey = config.Bind("分解", "DisassembleKey", "F9",
             "游戏内热键（UnityEngine.KeyCode 名称）：在背包界面按一下立即分解所有目标稀有度记忆。");
+        EnableT1 = config.Bind("开关", "EnableT1", true, "T1 词缀（掉落词缀强制最高档）总开关。");
+        EnableDropMultiplier = config.Bind("开关", "EnableDropMultiplier", true, "掉落包翻倍总开关。");
+        EnableRarityAvg = config.Bind("开关", "EnableRarityAvg", true, "稀有度平均化总开关。");
+        EnableAutoAbsorb = config.Bind("开关", "EnableAutoAbsorb", true, "自动拾取总开关。");
+        EnableDisassemble = config.Bind("开关", "EnableDisassemble", true, "一键分解总开关。");
+        RepairKey = config.Bind("修复", "RepairKey", "F10",
+            "修复热键（UnityEngine.KeyCode 名称）：清除背包中'已卸下但仍标记已装备'的记忆状态（游戏卸下逻辑 bug 兜底修复）。");
 
         var harmony = new Harmony("com.dreamecho.mod");
         var t = typeof(Echoes.Core.Utility.DropHelper);
@@ -169,6 +182,7 @@ public static class ModPatches
     // ── T1 词缀：BMR 返回的选中词缀替换为最高档（Get 未被 patch，无递归）──
     private static void BuildMemoryRandomPostfix(ref Il2CppSystem.ValueTuple<Echoes.ConceptMemoryAffix, Echoes.ConceptMemoryAffixPack> __result)
     {
+        if (!EnableT1.Value) return;
         if (__result.Item1 == null) return;
         var affix = __result.Item1;
         if (affix.MaxLevel <= 1 || affix.Level >= affix.MaxLevel) return;
@@ -191,6 +205,7 @@ public static class ModPatches
 
     private static void RandomDropPrefix(List<int> weights)
     {
+        if (!EnableRarityAvg.Value) return;
         if (weights == null || weights.Count == 0) return;
         if (_rarityPatched) return;
         var cfg = RarityWeights.Value;
@@ -237,6 +252,7 @@ public static class ModPatches
     private static void CreateDropPrefix(List<int> packIdList)
     {
         _dropDepth++;
+        if (!EnableDropMultiplier.Value) return;
         if (_dropDepth != 1) return;
         if (packIdList == null || packIdList.Count == 0) return;
 
@@ -309,6 +325,10 @@ public static class ModPatches
             // F9：一键分解（清空背包记忆）——全局热键，任何界面可用
             if (Enum.TryParse(AutoDisassembleKey.Value, out KeyCode kc9) && UnityEngine.Input.GetKeyDown(kc9))
                 TryAutoDisassemble();
+
+            // F10：修复残留已装备状态（游戏卸下逻辑 bug 兜底）
+            if (Enum.TryParse(RepairKey.Value, out KeyCode kc10) && UnityEngine.Input.GetKeyDown(kc10))
+                RepairEquipState();
         }
         catch (Exception e)
         {
@@ -321,6 +341,7 @@ public static class ModPatches
     {
         try
         {
+            if (!EnableAutoAbsorb.Value) return;
             if (!_autoAbsorbOn || !AutoAbsorbEnabled.Value) return;
 
             var now = UnityEngine.Time.realtimeSinceStartup;
@@ -379,6 +400,8 @@ public static class ModPatches
     {
         try
         {
+            if (!EnableDisassemble.Value) return;
+
             // 解析目标稀有度（EMemoryRarityType 枚举名 → int，与 Memory.Rarity 对应）
             var rarities = new HashSet<int>();
             foreach (var n in DisassembleRarities.Value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -398,11 +421,22 @@ public static class ModPatches
 
             // 快照目标（避免遍历中修改集合）
             // 注意：Il2Cpp 列表元素是基类包装，C# `is` 会全部失败；必须用 TryCast（基于原生类型检查）
+            var equipped = new Il2CppSystem.Collections.Generic.HashSet<string>();
+            try { pdm.PlayerDeckData?.CollectEquippedMemoryUIDs(equipped); } catch { }
+            var equippedCount = 0;
             var targets = new System.Collections.Generic.List<Echoes.Core.Managers.Memory>();
             foreach (var item in backpack.BackpackItems)
             {
                 var m = item?.TryCast<Echoes.Core.Managers.Memory>();
-                if (m != null && rarities.Contains(m.Rarity)) targets.Add(m);
+                if (m == null) continue;
+                if (!rarities.Contains(m.Rarity)) continue;
+                // 已装备保护：装备中/卡组引用的记忆不分解
+                if (m.EquipSlot != Echoes.Core.Enum.EMemorySlotType.None || equipped.Contains(m.GetMemroyUID()))
+                {
+                    equippedCount++;
+                    continue;
+                }
+                targets.Add(m);
             }
             if (targets.Count == 0)
             {
@@ -419,7 +453,7 @@ public static class ModPatches
                 return;
             }
 
-            _log.LogInfo($"[Mod] AutoDisassemble: 找到 {targets.Count} 件目标记忆（稀有度 {DisassembleRarities.Value}），使用游戏自带批量分解");
+            _log.LogInfo($"[Mod] AutoDisassemble: 找到 {targets.Count} 件目标记忆（稀有度 {DisassembleRarities.Value}，跳过已装备 {equippedCount} 件），使用游戏自带批量分解");
             foreach (var r in rarities)
             {
                 try
@@ -445,6 +479,54 @@ public static class ModPatches
         catch (Exception e)
         {
             _log.LogWarning($"[Mod] AutoDisassemble error: {e.Message}");
+        }
+    }
+
+    // ── 修复：清除"已卸下但仍标记已装备"的记忆状态（游戏卸下逻辑 bug 兜底）──
+    private static void RepairEquipState()
+    {
+        try
+        {
+            var pdm = Echoes.Core.Managers.PlayerDataManager.p_instance;
+            if (pdm?.PlayerDeckData == null) { _log.LogWarning("[Mod] Repair: PlayerDeckData 不可用"); return; }
+            var deckData = pdm.PlayerDeckData;
+            var backpackDict = pdm.PlayerBackpackData?.Backpack;
+            if (backpackDict == null || !backpackDict.ContainsKey(Echoes.Core.Managers.EBackpackItemType.Memory))
+            { _log.LogWarning("[Mod] Repair: 背包不可用"); return; }
+            var backpack = backpackDict[Echoes.Core.Managers.EBackpackItemType.Memory];
+            if (backpack?.BackpackItems == null) return;
+
+            // 1. 收集所有卡组当前装备的 UID（已装备 = UID 在卡组中）
+            var equipped = new Il2CppSystem.Collections.Generic.HashSet<string>();
+            deckData.CollectEquippedMemoryUIDs(equipped);
+
+            // 2. 背包 Memory：EquipSlot 非 None 但 UID 不在任何卡组 → 残留标记，清除
+            var fixedCount = 0;
+            foreach (var item in backpack.BackpackItems)
+            {
+                var m = item?.TryCast<Echoes.Core.Managers.Memory>();
+                if (m == null) continue;
+                if (m.EquipSlot != Echoes.Core.Enum.EMemorySlotType.None && !equipped.Contains(m.GetMemroyUID()))
+                {
+                    m.EquipSlot = Echoes.Core.Enum.EMemorySlotType.None;
+                    fixedCount++;
+                    _log.LogInfo($"[Mod] Repair: 清除残留装备标记 uid={m.GetMemroyUID()}");
+                }
+            }
+
+            if (fixedCount > 0)
+            {
+                try { Echoes.Core.Managers.PlayerDataManager.Save(); } catch (Exception e) { _log.LogWarning($"[Mod] Repair: 存档失败 {e.Message}"); }
+                _log.LogInfo($"[Mod] Repair: 修复 {fixedCount} 件残留，已存档（重进游戏后生效）");
+            }
+            else
+            {
+                _log.LogInfo($"[Mod] Repair: 未发现残留装备标记（背包记忆 {backpack.BackpackItems.Count} 件，卡组装备 {equipped.Count} 个）");
+            }
+        }
+        catch (Exception e)
+        {
+            _log.LogWarning($"[Mod] Repair error: {e.Message}");
         }
     }
 }
