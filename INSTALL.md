@@ -91,7 +91,7 @@ DropMultiplierPacks = 701:10,711:2   # 碎片×10、车票×2
 |---|---|
 | 游戏打不开/闪退 | 确认 BepInEx 解压路径正确（winhttp.dll 必须在 exe 旁边）；删除 `BepInEx\interop\` 后重启游戏让它重新生成 |
 | 插件没加载（日志无 DreamEchoMod） | 确认 `DreamEchoMod.dll` 在 `BepInEx\plugins\` 下（不要放子文件夹） |
-| 游戏更新后 MOD 失效 | BepInEx 会自动重建接口文件，通常无需操作；若日志出现 `FAILED find`，找作者要新版 DLL |
+| 游戏更新后 MOD 失效 | Steam 大更新有时会**清除游戏目录里的 BepInEx 框架**（`BepInEx\`、`dotnet\` 整个消失）。处理：重新解压 `BepInExPack_IL2CPP-6.0.755.zip` 到游戏根目录——zip 里是 `BepInExPack\` 子目录，把里面的 `BepInEx\`、`dotnet\`、`winhttp.dll`、`doorstop_config.ini`、`.doorstop_version` 全部**移动/复制到游戏根目录**（与 `DreamEchoes.exe` 同级），再把 `DreamEchoMod.dll` 放回 `BepInEx\plugins\`，重新启动游戏（会自动重建接口文件）。若日志出现 `FAILED find`，找作者要新版 DLL |
 | 想卸载 MOD | 删除 `BepInEx\plugins\DreamEchoMod.dll` 即可，不影响存档 |
 
 ## 说明
