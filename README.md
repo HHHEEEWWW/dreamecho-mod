@@ -17,7 +17,10 @@
 ## 前置条件
 
 - 已安装 Steam 版《梦境回响 DreamEcho》（`E:\steam\steamapps\common\DreamEcho`）
-- BepInEx 6.0.0-be.755（IL2CPP）已安装到游戏目录（含 `winhttp.dll`、`BepInEx\`、`dotnet\`；interop 程序集由 BepInEx 首次启动自动生成到 `BepInEx\interop\`，160 个 DLL）
+- **BepInEx-Manager（BPM）隔离模式**：BepInEx 整树位于 BPM 档案
+  `<BPM数据根>\plugin-library\dreamecho-2ffb\<档案id>\BepInEx\`；游戏根目录只有注入件
+  （`winhttp.dll` + `doorstop_config.ini` + `.doorstep_version`），**没有 BepInEx 文件夹是正常形态**
+- interop 程序集由 BepInEx 首次启动自动生成到档案 `BepInEx\interop\`（160 个 DLL）
 - .NET SDK（编译用；插件运行时由 BepInEx 自带的 .NET 6.0.7 提供）
 
 ## 构建与部署
@@ -26,7 +29,9 @@
 powershell -ExecutionPolicy Bypass -File build.ps1
 ```
 
-脚本自动定位项目根（`$PSScriptRoot`），等价于 `dotnet build src\DreamEchoMod -c Release` + 复制 `DreamEchoMod.dll` 到游戏 `BepInEx\plugins\`。
+脚本逻辑：读游戏目录 `doorstop_config.ini` 的 `target_assembly` 反推出档案 BepInEx 根 →
+`dotnet build -p:BepDir=<档案BepInEx>`（csproj 引用全部走 `$(BepDir)`，不写死路径）→
+复制 `DreamEchoMod.dll` 到档案 `BepInEx\plugins\`。日志在档案 `BepInEx\LogOutput.log`。
 
 ## 配置说明
 
@@ -44,16 +49,18 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 | 分解 | `DisassembleRarities` | `Normal,Magic,Rare,Unique,Special` | 一键分解目标稀有度（枚举名，默认全部=清空记忆；空=关闭） |
 | 分解 | `AutoOnEnter` | `true` | 进入分解模式时自动分解 |
 | 分解 | `DisassembleKey` | `F9` | 一键分解热键（KeyCode 名，任意界面可用） |
+| 开关 | `EnableT1 / EnableDropMultiplier / EnableRarityAvg / EnableAutoAbsorb / EnableDisassemble` | `true` | 各功能总开关（排查问题时按个关闭做二分定位） |
+| 修复 | `RepairKey` | `F10` | 修复热键：清除背包中"已卸下但仍标记已装备"的记忆状态并存档 |
 
 ## 验证方法
 
 1. 从 Steam 启动游戏（或直接运行 `DreamEchoes.exe`）
-2. 查看 `E:\steam\steamapps\common\DreamEcho\BepInEx\LogOutput.log`
+2. 查看档案日志 `<BPM数据根>\plugin-library\dreamecho-2ffb\<档案id>\BepInEx\LogOutput.log`（入口：`test-equip-bug.bat` 自动定位并打开）
 3. 关键行：
    - `Loading [DreamEchoMod 0.1.0]` —— 插件被加载
    - `[Mod] patched DropHelper.BuildMemoryRandom ...` 等 —— 各补丁安装成功
    - `[Mod] BMR prefix: memoryLevel=...`、`[Mod] Rarity [...] ...` —— 游戏内实际触发
-   - `[Probe] ...` —— 探针观察输出
+   - `[Probe] ...` —— 探针观察输出（含已装备残留专项：`UnEquip(data)` / `DisassembleAll` / `★...发现 N 件残留`）
 
 ## 目录结构
 
@@ -70,8 +77,11 @@ dreamecho-mod/
 
 - ✅ 技术链路 MVP 完成（详见 `docs/链路验证结论.md`）
 - ✅ 掉落链路研判完成（详见 `docs/研判-装备词缀掉落系统.md`）
-- ✅ 三个修改方向（T1 词缀 / 掉落翻倍 / 稀有度平均化）已编码并通过编译
-- ⏳ 实机验证与配置校准（观察探针日志，确认游戏内实际效果）
+- ✅ 五大功能上线验收：T1 词缀 / 掉落翻倍 / 稀有度平均化 / 自动拾取（F8）/ 一键分解（F9）
+- ✅ 开发链适配 BPM 隔离模式（csproj `$(BepDir)` + build.ps1 doorstop 反推档案部署）
+- 🔴 **排查中**：已装备标签残留 bug——F10 修复热键 + 5 功能开关已部署；专项探针
+  （`UIBackPackSystem.UnEquip/Equip`、`DisassembleAll`、`CheckMemorySlotType`、`CollectEquippedMemoryUIDs`）
+  已部署，跑一轮 `test-equip-bug.bat` 复现即可取证定位元凶
 
 ## 相关文档
 
