@@ -6,66 +6,72 @@
     <AssemblyName>DreamEchoMod</AssemblyName>
     <RootNamespace>DreamEchoMod</RootNamespace>
     <EnableDynamicLoading>true</EnableDynamicLoading>
+    <!-- BepInEx root (core/ + interop/), supplied by build.ps1 via -p:BepDir=... -->
+    <BepDir Condition="'$(BepDir)' == ''">__BEPDIR_NOT_SET__</BepDir>
   </PropertyGroup>
+  <Target Name="CheckBepDir" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="'$(BepDir)' == '__BEPDIR_NOT_SET__'"
+           Text="BepDir is not set. Run build.ps1 (it resolves the profile BepInEx dir from doorstop_config.ini) or pass -p:BepDir=&lt;profile&gt;\BepInEx." />
+  </Target>
   <ItemGroup>
     <Reference Include="BepInEx.Core">
-      <HintPath>E:\steam\steamapps\common\DreamEcho\BepInEx\core\BepInEx.Core.dll</HintPath>
+      <HintPath>$(BepDir)\core\BepInEx.Core.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="BepInEx.Unity.IL2CPP">
-      <HintPath>E:\steam\steamapps\common\DreamEcho\BepInEx\core\BepInEx.Unity.IL2CPP.dll</HintPath>
+      <HintPath>$(BepDir)\core\BepInEx.Unity.IL2CPP.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine">
-      <HintPath>E:\steam\steamapps\common\DreamEcho\BepInEx\interop\UnityEngine.dll</HintPath>
+      <HintPath>$(BepDir)\interop\UnityEngine.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
-      <HintPath>E:\steam\steamapps\common\DreamEcho\BepInEx\interop\UnityEngine.CoreModule.dll</HintPath>
+      <HintPath>$(BepDir)\interop\UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="UnityEngine.InputLegacyModule">
-      <HintPath>E:\steam\steamapps\common\DreamEcho\BepInEx\interop\UnityEngine.InputLegacyModule.dll</HintPath>
+      <HintPath>$(BepDir)\interop\UnityEngine.InputLegacyModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Assembly-CSharp">
-      <HintPath>E:\steam\steamapps\common\DreamEcho\BepInEx\interop\Assembly-CSharp.dll</HintPath>
+      <HintPath>$(BepDir)\interop\Assembly-CSharp.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Assembly-CSharp-firstpass">
-      <HintPath>E:\steam\steamapps\common\DreamEcho\BepInEx\interop\Assembly-CSharp-firstpass.dll</HintPath>
+      <HintPath>$(BepDir)\interop\Assembly-CSharp-firstpass.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Il2CppSystem.Core">
-      <HintPath>E:\steam\steamapps\common\DreamEcho\BepInEx\interop\Il2CppSystem.Core.dll</HintPath>
+      <HintPath>$(BepDir)\interop\Il2CppSystem.Core.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Il2Cppmscorlib">
-      <HintPath>E:\steam\steamapps\common\DreamEcho\BepInEx\interop\Il2Cppmscorlib.dll</HintPath>
+      <HintPath>$(BepDir)\interop\Il2Cppmscorlib.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="0Harmony">
-      <HintPath>E:\steam\steamapps\common\DreamEcho\BepInEx\core\0Harmony.dll</HintPath>
+      <HintPath>$(BepDir)\core\0Harmony.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Il2CppInterop.Runtime">
-      <HintPath>E:\steam\steamapps\common\DreamEcho\BepInEx\core\Il2CppInterop.Runtime.dll</HintPath>
+      <HintPath>$(BepDir)\core\Il2CppInterop.Runtime.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Il2CppInterop.HarmonySupport">
-      <HintPath>E:\steam\steamapps\common\DreamEcho\BepInEx\core\Il2CppInterop.HarmonySupport.dll</HintPath>
+      <HintPath>$(BepDir)\core\Il2CppInterop.HarmonySupport.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Sirenix.Serialization">
-      <HintPath>E:\steam\steamapps\common\DreamEcho\BepInEx\interop\Sirenix.Serialization.dll</HintPath>
+      <HintPath>$(BepDir)\interop\Sirenix.Serialization.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Sirenix.OdinInspector.Attributes">
-      <HintPath>E:\steam\steamapps\common\DreamEcho\BepInEx\interop\Sirenix.OdinInspector.Attributes.dll</HintPath>
+      <HintPath>$(BepDir)\interop\Sirenix.OdinInspector.Attributes.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="Sirenix.Utilities">
-      <HintPath>E:\steam\steamapps\common\DreamEcho\BepInEx\interop\Sirenix.Utilities.dll</HintPath>
+      <HintPath>$(BepDir)\interop\Sirenix.Utilities.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>

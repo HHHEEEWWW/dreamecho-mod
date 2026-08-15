@@ -422,7 +422,7 @@ public static class ModPatches
             // 快照目标（避免遍历中修改集合）
             // 注意：Il2Cpp 列表元素是基类包装，C# `is` 会全部失败；必须用 TryCast（基于原生类型检查）
             var equipped = new Il2CppSystem.Collections.Generic.HashSet<string>();
-            try { pdm.PlayerDeckData?.CollectEquippedMemoryUIDs(equipped); } catch { }
+            try { pdm?.PlayerDeckData?.CollectEquippedMemoryUIDs(equipped); } catch { }
             var equippedCount = 0;
             var targets = new System.Collections.Generic.List<Echoes.Core.Managers.Memory>();
             foreach (var item in backpack.BackpackItems)

@@ -65,28 +65,172 @@ public static class ProbePatches
 
         // 卸下装备链路观察（排查"已装备标签残留"问题）
         Patch(harmony, AccessTools.Method(typeof(Echoes.UI.UIEquipComponent), "Unequip",
-            new[] { typeof(Echoes.Core.Enum.EMemorySlotType) }), "EquipUnequip");
-        Patch(harmony, AccessTools.Method(typeof(Echoes.UI.UIEquipMemoryPage), "UnEquip", Type.EmptyTypes), "MemoryPageUnEquip");
+            new[] { typeof(Echoes.Core.Enum.EMemorySlotType) }), "EquipUnequip",
+            postfix: nameof(EquipUnequipPostfix));
+        Patch(harmony, AccessTools.Method(typeof(Echoes.UI.UIEquipMemoryPage), "UnEquip", Type.EmptyTypes), "MemoryPageUnEquip",
+            postfix: nameof(MemoryPageUnEquipPostfix));
+
+        // ==== 已装备残留专项探针（2026-08-15 接手后新增）====
+        // 数据层卸下（唯一调用者）：卸下前后全背包扫描，残留当场现形
+        Patch(harmony, AccessTools.Method(typeof(Echoes.UI.UIBackPackSystem), "UnEquip",
+            new[] { typeof(Echoes.Core.Enum.EMemorySlotType) }), "UnEquipData",
+            prefix: nameof(UnEquipDataPrefix), postfix: nameof(UnEquipDataPostfix));
+        // 数据层装备：记录装备写入的 EquipSlot
+        Patch(harmony, AccessTools.Method(typeof(Echoes.UI.UIBackPackSystem), "Equip",
+            new[] { typeof(Echoes.Core.Managers.Memory), typeof(int) }), "EquipData",
+            postfix: nameof(EquipDataPostfix));
+        // UI 层"已装备标签"判定点：CheckMemorySlotType(Memory)
+        Patch(harmony, AccessTools.Method(typeof(Echoes.UI.UIBackPackMemoryEquipViewSystem), "CheckMemorySlotType",
+            new[] { typeof(Echoes.Core.Managers.Memory) }), "CheckMemorySlotType",
+            prefix: nameof(CheckSlotPrefix));
+        // F9 分解链路（嫌疑#1）：调用前后残留扫描
+        Patch(harmony, AccessTools.Method(typeof(Echoes.UI.UIBackPack), "DisassembleAll",
+            new[] { typeof(int) }), "DisassembleAll",
+            prefix: nameof(DisassembleAllPrefix), postfix: nameof(DisassembleAllPostfix));
+        // 已装备判定数据源：CollectEquippedMemoryUIDs
+        Patch(harmony, AccessTools.Method(typeof(Echoes.Core.Managers.PlayerDeckData), "CollectEquippedMemoryUIDs",
+            new[] { typeof(HashSet<string>) }), "CollectEquipped",
+            prefix: nameof(CollectEquippedPrefix), postfix: nameof(CollectEquippedPostfix));
 
         log.LogInfo("[Probe] diagnostic patches installed");
     }
 
-    private static void Patch(Harmony harmony, MethodBase? original, string tag, string? postfix = null)
+    private static void Patch(Harmony harmony, MethodBase? original, string tag, string? prefix = null, string? postfix = null)
     {
         if (original == null) { _log.LogError($"[Probe] FAILED find {tag}"); return; }
+        var pre = prefix != null ? new HarmonyMethod(typeof(ProbePatches).GetMethod(prefix, All)!) : null;
         var post = postfix != null ? new HarmonyMethod(typeof(ProbePatches).GetMethod(postfix, All)!) : null;
         harmony.Patch(original,
-            prefix: new HarmonyMethod(typeof(ProbePatches).GetMethod(nameof(GenericPrefix), All)!),
+            prefix: pre ?? new HarmonyMethod(typeof(ProbePatches).GetMethod(nameof(GenericPrefix), All)!),
             postfix: post);
         _log.LogInfo($"[Probe] patched {tag}");
     }
 
+    // ── 已装备残留专项探针方法 ──
+
+    // 数据层卸下（UIBackPackSystem.UnEquip）——卸下后立即全背包扫描，残留当场现形
+    private static void UnEquipDataPrefix(Echoes.Core.Enum.EMemorySlotType slotType)
+    {
+        _log.LogInfo($"[Probe] UnEquip(data): slot={slotType}");
+    }
+
+    private static void UnEquipDataPostfix(Echoes.Core.Enum.EMemorySlotType slotType)
+    {
+        try { DumpEquipResidue($"UnEquip(data) after slot={slotType}"); }
+        catch (Exception e) { _log.LogWarning($"[Probe] UnEquipDataPostfix error: {e.Message}"); }
+    }
+
+    // UI 层卸下入口 postfix：同样扫描
+    private static void EquipUnequipPostfix(Echoes.Core.Enum.EMemorySlotType slot)
+    {
+        try { DumpEquipResidue($"UIEquipComponent.Unequip after slot={slot}"); }
+        catch (Exception e) { _log.LogWarning($"[Probe] EquipUnequipPostfix error: {e.Message}"); }
+    }
+
+    private static void MemoryPageUnEquipPostfix()
+    {
+        try { DumpEquipResidue("UIEquipMemoryPage.UnEquip after"); }
+        catch (Exception e) { _log.LogWarning($"[Probe] MemoryPageUnEquipPostfix error: {e.Message}"); }
+    }
+
+    // 数据层装备：记录装备写入
+    private static void EquipDataPostfix(Echoes.Core.Managers.Memory memoryItem, int slotId)
+    {
+        try
+        {
+            _log.LogInfo($"[Probe] Equip(data): uid={(memoryItem != null ? memoryItem.GetMemroyUID() : "null")} slotId={slotId} EquipSlot={(memoryItem != null ? (int)memoryItem.EquipSlot : -1)}");
+        }
+        catch (Exception e) { _log.LogWarning($"[Probe] EquipDataPostfix error: {e.Message}"); }
+    }
+
+    // UI"已装备标签"判定点：只打印 EquipSlot != None 的判定（限频）
+    private static void CheckSlotPrefix(Echoes.Core.Managers.Memory memory)
+    {
+        try
+        {
+            if (memory == null) return;
+            if (memory.EquipSlot == Echoes.Core.Enum.EMemorySlotType.None) return;
+            if ((DateTime.UtcNow - _lastLog).TotalSeconds < 2) return;
+            _lastLog = DateTime.UtcNow;
+            _log.LogInfo($"[Probe] CheckMemorySlotType: uid={memory.GetMemroyUID()} EquipSlot={(int)memory.EquipSlot}");
+        }
+        catch (Exception e) { _log.LogWarning($"[Probe] CheckSlotPrefix error: {e.Message}"); }
+    }
+
+    // F9 分解链路（嫌疑#1）
+    private static void DisassembleAllPrefix(int type)
+    {
+        _log.LogInfo($"[Probe] DisassembleAll(type={type}) CALLED");
+    }
+
+    private static void DisassembleAllPostfix(int type)
+    {
+        try { DumpEquipResidue($"DisassembleAll(type={type}) after"); }
+        catch (Exception e) { _log.LogWarning($"[Probe] DisassembleAllPostfix error: {e.Message}"); }
+    }
+
+    // 已装备判定数据源观察（限频）
+    private static void CollectEquippedPrefix(HashSet<string> buffer)
+    {
+        if ((DateTime.UtcNow - _lastLog).TotalSeconds < 30) return;
+        _lastLog = DateTime.UtcNow;
+        _log.LogInfo($"[Probe] CollectEquippedMemoryUIDs CALLED (buffer before={buffer?.Count ?? -1})");
+    }
+
+    private static void CollectEquippedPostfix(HashSet<string> buffer)
+    {
+        if ((DateTime.UtcNow - _lastLog).TotalSeconds < 30) return;
+        _lastLog = DateTime.UtcNow;
+        _log.LogInfo($"[Probe] CollectEquippedMemoryUIDs done: {(buffer != null ? buffer.Count : -1)} uids");
+    }
+
+    // 残留检测：背包中 EquipSlot != None 但 UID 不在任何卡组 = 残留现场
+    private static void DumpEquipResidue(string tag)
+    {
+        var pdm = Echoes.Core.Managers.PlayerDataManager.p_instance;
+        if (pdm?.PlayerDeckData == null) { _log.LogInfo($"[Probe] {tag}: PlayerDeckData 不可用"); return; }
+        var equipped = new HashSet<string>();
+        try { pdm.PlayerDeckData.CollectEquippedMemoryUIDs(equipped); }
+        catch (Exception e) { _log.LogWarning($"[Probe] {tag}: CollectEquippedMemoryUIDs 失败 {e.Message}"); return; }
+        var backpackDict = pdm.PlayerBackpackData?.Backpack;
+        if (backpackDict == null || !backpackDict.ContainsKey(Echoes.Core.Managers.EBackpackItemType.Memory))
+        {
+            _log.LogInfo($"[Probe] {tag}: 背包不可用（backpackDict={backpackDict != null}）");
+            return;
+        }
+        var backpack = backpackDict[Echoes.Core.Managers.EBackpackItemType.Memory];
+        if (backpack?.BackpackItems == null) { _log.LogInfo($"[Probe] {tag}: BackpackItems 为空"); return; }
+
+        var residue = new System.Collections.Generic.List<string>();
+        var totalEquipped = 0;
+        foreach (var item in backpack.BackpackItems)
+        {
+            var m = item?.TryCast<Echoes.Core.Managers.Memory>();
+            if (m == null) continue;
+            if (m.EquipSlot == Echoes.Core.Enum.EMemorySlotType.None) continue;
+            totalEquipped++;
+            if (!equipped.Contains(m.GetMemroyUID()))
+                residue.Add($"uid={m.GetMemroyUID()} slot={(int)m.EquipSlot}");
+        }
+        if (residue.Count > 0)
+            _log.LogInfo($"[Probe] ★{tag}: 发现 {residue.Count} 件残留（EquipSlot!=None 共 {totalEquipped}，卡组 {equipped.Count}）：{string.Join("; ", residue)}");
+        else
+            _log.LogInfo($"[Probe] {tag}: 无残留（EquipSlot!=None {totalEquipped} 件均在卡组）");
+    }
+
     private static void GenericPrefix(object[] __args, MethodBase __originalMethod)
     {
-        if ((DateTime.UtcNow - _lastLog).TotalSeconds < 5) return;
-        _lastLog = DateTime.UtcNow;
-        var argStr = string.Join(" | ", __args.Select((a, i) => $"[{i}]={Format(a)}"));
-        _log.LogInfo($"[Probe] {__originalMethod.Name}({argStr})");
+        try
+        {
+            if ((DateTime.UtcNow - _lastLog).TotalSeconds < 5) return;
+            _lastLog = DateTime.UtcNow;
+            var argStr = string.Join(" | ", __args.Select((a, i) => $"[{i}]={Format(a)}"));
+            _log.LogInfo($"[Probe] {__originalMethod.Name}({argStr})");
+        }
+        catch (Exception e)
+        {
+            _log.LogWarning($"[Probe] GenericPrefix error: {e.Message}");
+        }
     }
 
     private static void PostfixApplyLuck(float __result, object[] __args)
