@@ -17,12 +17,39 @@ public static class ProbePatches
     private const BindingFlags All = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance;
     private static DateTime _lastLog = DateTime.MinValue;
 
-    public static void Install(ManualLogSource log)
+    public static void Install(ManualLogSource log, bool equipOnly = true)
     {
         _log = log;
         var harmony = new Harmony("com.dreamecho.probe");
         var t = typeof(Echoes.Core.Utility.DropHelper);
 
+        // ===== 装备残留排查探针（8/16 游戏更新后恢复，聚焦卸下链路）=====
+        // 数据层卸下（唯一调用者）：卸下前后全背包扫描，残留当场现形
+        Patch(harmony, AccessTools.Method(typeof(Echoes.UI.UIBackPackSystem), "UnEquip",
+            new[] { typeof(Echoes.Core.Enum.EMemorySlotType) }), "UnEquipData",
+            prefix: nameof(UnEquipDataPrefix), postfix: nameof(UnEquipDataPostfix));
+        // 数据层装备：记录装备写入的 EquipSlot
+        Patch(harmony, AccessTools.Method(typeof(Echoes.UI.UIBackPackSystem), "Equip",
+            new[] { typeof(Echoes.Core.Managers.Memory), typeof(int) }), "EquipData",
+            postfix: nameof(EquipDataPostfix));
+        // UI 层"已装备标签"判定点：CheckMemorySlotType(Memory)
+        // [BISECT-3] 8/16 更新后疑似崩溃源（GetMemroyUID Length error），暂移除
+        // Patch(harmony, AccessTools.Method(typeof(Echoes.UI.UIBackPackMemoryEquipViewSystem), "CheckMemorySlotType",
+        //     new[] { typeof(Echoes.Core.Managers.Memory) }), "CheckMemorySlotType",
+        //     prefix: nameof(CheckSlotPrefix));
+        // F9 分解链路探针已移除（游戏作者已添加分解功能，MOD 不再观察分解）
+        // 已装备判定数据源：CollectEquippedMemoryUIDs
+        Patch(harmony, AccessTools.Method(typeof(Echoes.Core.Managers.PlayerDeckData), "CollectEquippedMemoryUIDs",
+            new[] { typeof(HashSet<string>) }), "CollectEquipped",
+            prefix: nameof(CollectEquippedPrefix), postfix: nameof(CollectEquippedPostfix));
+
+        if (equipOnly)
+        {
+            log.LogInfo("[Probe] equip-only diagnostic patches installed");
+            return;
+        }
+
+        // ===== 以下为掉率/词缀/UI 观察探针（equipOnly=false 时启用）=====
         Patch(harmony, AccessTools.Method(t, "RandomDrop",
             new[] { typeof(List<int>), typeof(Echoes.Core.Utility.DropHelper.EDropLuckyType), typeof(List<int>) }), "RandomDrop");
         Patch(harmony, AccessTools.Method(t, "RollDropWeightIndex",
@@ -69,28 +96,6 @@ public static class ProbePatches
             postfix: nameof(EquipUnequipPostfix));
         Patch(harmony, AccessTools.Method(typeof(Echoes.UI.UIEquipMemoryPage), "UnEquip", Type.EmptyTypes), "MemoryPageUnEquip",
             postfix: nameof(MemoryPageUnEquipPostfix));
-
-        // ==== 已装备残留专项探针（2026-08-15 接手后新增）====
-        // 数据层卸下（唯一调用者）：卸下前后全背包扫描，残留当场现形
-        Patch(harmony, AccessTools.Method(typeof(Echoes.UI.UIBackPackSystem), "UnEquip",
-            new[] { typeof(Echoes.Core.Enum.EMemorySlotType) }), "UnEquipData",
-            prefix: nameof(UnEquipDataPrefix), postfix: nameof(UnEquipDataPostfix));
-        // 数据层装备：记录装备写入的 EquipSlot
-        Patch(harmony, AccessTools.Method(typeof(Echoes.UI.UIBackPackSystem), "Equip",
-            new[] { typeof(Echoes.Core.Managers.Memory), typeof(int) }), "EquipData",
-            postfix: nameof(EquipDataPostfix));
-        // UI 层"已装备标签"判定点：CheckMemorySlotType(Memory)
-        Patch(harmony, AccessTools.Method(typeof(Echoes.UI.UIBackPackMemoryEquipViewSystem), "CheckMemorySlotType",
-            new[] { typeof(Echoes.Core.Managers.Memory) }), "CheckMemorySlotType",
-            prefix: nameof(CheckSlotPrefix));
-        // F9 分解链路（嫌疑#1）：调用前后残留扫描
-        Patch(harmony, AccessTools.Method(typeof(Echoes.UI.UIBackPack), "DisassembleAll",
-            new[] { typeof(int) }), "DisassembleAll",
-            prefix: nameof(DisassembleAllPrefix), postfix: nameof(DisassembleAllPostfix));
-        // 已装备判定数据源：CollectEquippedMemoryUIDs
-        Patch(harmony, AccessTools.Method(typeof(Echoes.Core.Managers.PlayerDeckData), "CollectEquippedMemoryUIDs",
-            new[] { typeof(HashSet<string>) }), "CollectEquipped",
-            prefix: nameof(CollectEquippedPrefix), postfix: nameof(CollectEquippedPostfix));
 
         log.LogInfo("[Probe] diagnostic patches installed");
     }
@@ -157,17 +162,7 @@ public static class ProbePatches
         catch (Exception e) { _log.LogWarning($"[Probe] CheckSlotPrefix error: {e.Message}"); }
     }
 
-    // F9 分解链路（嫌疑#1）
-    private static void DisassembleAllPrefix(int type)
-    {
-        _log.LogInfo($"[Probe] DisassembleAll(type={type}) CALLED");
-    }
-
-    private static void DisassembleAllPostfix(int type)
-    {
-        try { DumpEquipResidue($"DisassembleAll(type={type}) after"); }
-        catch (Exception e) { _log.LogWarning($"[Probe] DisassembleAllPostfix error: {e.Message}"); }
-    }
+    // 分解链路探针已移除（游戏作者已添加分解功能，MOD 不再观察分解）
 
     // 已装备判定数据源观察（限频）
     private static void CollectEquippedPrefix(HashSet<string> buffer)

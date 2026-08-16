@@ -64,16 +64,17 @@ public static class ModPatches
         AutoAbsorbToggle = config.Bind("自动拾取", "ToggleKey", "F8",
             "游戏内热键（UnityEngine.KeyCode 名称）：按一下切换自动拾取开/关（运行时生效，无需重启）。");
         DisassembleRarities = config.Bind("分解", "DisassembleRarities", "Normal,Magic,Rare,Unique,Special",
-            "一键分解目标稀有度（EMemoryRarityType 枚举名，逗号分隔）：Special=原初回忆（红色），Unique=传奇，Rare=稀有，Magic=魔法，Normal=普通。默认全部=清空背包记忆。空=关闭。");
-        AutoDisassembleOnEnter = config.Bind("分解", "AutoOnEnter", true,
-            "进入分解模式（点分解按钮）时自动分解所有目标稀有度记忆。");
-        AutoDisassembleKey = config.Bind("分解", "DisassembleKey", "F9",
-            "游戏内热键（UnityEngine.KeyCode 名称）：在背包界面按一下立即分解所有目标稀有度记忆。");
+            "【已停用】一键分解目标稀有度（EMemoryRarityType 枚举名，逗号分隔）：Special=原初回忆（红色），Unique=传奇，Rare=稀有，Magic=魔法，Normal=普通。默认全部=清空背包记忆。空=关闭。游戏作者已添加分解全部装备功能，本功能移除。");
+        AutoDisassembleOnEnter = config.Bind("分解", "AutoOnEnter", false,
+            "【已停用】进入分解模式（点分解按钮）时自动分解所有目标稀有度记忆。游戏作者已添加分解功能，本功能移除。");
+        AutoDisassembleKey = config.Bind("分解", "DisassembleKey", "None",
+            "【已停用】游戏内热键（UnityEngine.KeyCode 名称）：在背包界面按一下立即分解所有目标稀有度记忆。游戏作者已添加分解功能，本功能移除。");
         EnableT1 = config.Bind("开关", "EnableT1", true, "T1 词缀（掉落词缀强制最高档）总开关。");
         EnableDropMultiplier = config.Bind("开关", "EnableDropMultiplier", true, "掉落包翻倍总开关。");
         EnableRarityAvg = config.Bind("开关", "EnableRarityAvg", true, "稀有度平均化总开关。");
         EnableAutoAbsorb = config.Bind("开关", "EnableAutoAbsorb", true, "自动拾取总开关。");
-        EnableDisassemble = config.Bind("开关", "EnableDisassemble", true, "一键分解总开关。");
+        EnableDisassemble = config.Bind("开关", "EnableDisassemble", false,
+            "【已停用】一键分解总开关。游戏作者已添加分解功能，MOD 不再干预分解。");
         RepairKey = config.Bind("修复", "RepairKey", "F10",
             "修复热键（UnityEngine.KeyCode 名称）：清除背包中'已卸下但仍标记已装备'的记忆状态（游戏卸下逻辑 bug 兜底修复）。");
 
@@ -138,7 +139,8 @@ public static class ModPatches
             log.LogInfo("[Mod] patched InteractiveItemManager.OnUpdate (AutoAbsorb)");
         }
 
-        // 4b. 全局热键（F8/F9）：挂 InputManager.Update（MonoBehaviour，任何场景/界面都每帧运行）
+        // 4b. 全局热键（F8/F10）：挂 InputManager.Update（MonoBehaviour，任何场景/界面都每帧运行）
+        //     F9 分解热键已移除（游戏作者已添加分解全部装备功能，MOD 不再干预分解）
         var im = typeof(InputManager);
         var imUpdate = AccessTools.Method(im, "Update", Type.EmptyTypes);
         if (imUpdate == null) { log.LogError("[Mod] FAILED find InputManager.Update"); }
@@ -146,23 +148,6 @@ public static class ModPatches
         {
             harmony.Patch(imUpdate, postfix: new HarmonyMethod(typeof(ModPatches).GetMethod(nameof(InputManagerUpdatePostfix), All)!));
             log.LogInfo("[Mod] patched InputManager.Update (Global hotkeys)");
-        }
-
-        // 5. 一键分解（原初回忆）：进入分解模式自动分解 + F9 热键手动触发
-        var ubp = typeof(Echoes.UI.UIBackPack);
-        var startDis = AccessTools.Method(ubp, "StartDisassembling", Type.EmptyTypes);
-        if (startDis == null) { log.LogError("[Mod] FAILED find UIBackPack.StartDisassembling"); }
-        else
-        {
-            harmony.Patch(startDis, postfix: new HarmonyMethod(typeof(ModPatches).GetMethod(nameof(StartDisassemblingPostfix), All)!));
-            log.LogInfo("[Mod] patched UIBackPack.StartDisassembling (AutoDisassemble)");
-        }
-        var ubpUpdate = AccessTools.Method(ubp, "Update", Type.EmptyTypes);
-        if (ubpUpdate == null) { log.LogError("[Mod] FAILED find UIBackPack.Update"); }
-        else
-        {
-            harmony.Patch(ubpUpdate, postfix: new HarmonyMethod(typeof(ModPatches).GetMethod(nameof(UIBackPackUpdatePostfix), All)!));
-            log.LogInfo("[Mod] patched UIBackPack.Update (Disassemble hotkey)");
         }
     }
 
@@ -322,9 +307,7 @@ public static class ModPatches
                 LogRateLimited($"[Mod] AutoAbsorb {( _autoAbsorbOn ? "ON" : "OFF")} (hotkey {kc8})");
             }
 
-            // F9：一键分解（清空背包记忆）——全局热键，任何界面可用
-            if (Enum.TryParse(AutoDisassembleKey.Value, out KeyCode kc9) && UnityEngine.Input.GetKeyDown(kc9))
-                TryAutoDisassemble();
+            // F9 一键分解已移除（游戏作者已添加分解功能，MOD 不再干预分解）
 
             // F10：修复残留已装备状态（游戏卸下逻辑 bug 兜底）
             if (Enum.TryParse(RepairKey.Value, out KeyCode kc10) && UnityEngine.Input.GetKeyDown(kc10))
@@ -357,132 +340,11 @@ public static class ModPatches
         }
     }
 
-    // ── 一键分解（清空背包记忆）：全局热键 + 进入分解模式自动触发 ──
-    private static void StartDisassemblingPostfix(Echoes.UI.UIBackPack __instance)
-    {
-        if (AutoDisassembleOnEnter.Value) TryAutoDisassemble();
-    }
+    // ── 分解功能已移除（游戏作者已添加分解全部装备功能，MOD 不再干预分解）──
 
-    private static void UIBackPackUpdatePostfix()
-    {
-        // 背包界面内热键（保险：OnUpdate 钩子不响应时的兜底）
-        if (Enum.TryParse(AutoDisassembleKey.Value, out KeyCode kc) && UnityEngine.Input.GetKeyDown(kc))
-            TryAutoDisassemble();
-    }
-
-    private static Echoes.UI.UIBackPack? GetBackPackUI()
-    {
-        try
-        {
-            // 1) 已打开的背包页面
-            var page = Echoes.Core.Managers.UIManager.GetActivePage("UIBackPack") as Echoes.UI.UIBackPack;
-            if (page != null) return page;
-        }
-        catch (Exception e) { _log.LogWarning($"[Mod] GetActivePage failed: {e.Message}"); }
-        try
-        {
-            // 2) 强制创建实例（不显示，仅用于调用数据逻辑）
-            var created = Echoes.Core.Managers.UIManager.GetOrCreatePage("UIBackPack") as Echoes.UI.UIBackPack;
-            if (created != null) return created;
-        }
-        catch (Exception e) { _log.LogWarning($"[Mod] GetOrCreatePage failed: {e.Message}"); }
-        try
-        {
-            // 3) 场景中查找（含未激活）
-            var all = UnityEngine.Resources.FindObjectsOfTypeAll<Echoes.UI.UIBackPack>();
-            if (all != null && all.Length > 0) return all[0];
-        }
-        catch (Exception e) { _log.LogWarning($"[Mod] FindObjectsOfTypeAll failed: {e.Message}"); }
-        return null;
-    }
-
-    private static void TryAutoDisassemble()
-    {
-        try
-        {
-            if (!EnableDisassemble.Value) return;
-
-            // 解析目标稀有度（EMemoryRarityType 枚举名 → int，与 Memory.Rarity 对应）
-            var rarities = new HashSet<int>();
-            foreach (var n in DisassembleRarities.Value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                if (Enum.TryParse<Echoes.Core.Managers.EMemoryRarityType>(n, true, out var r)) rarities.Add((int)r);
-            if (rarities.Count == 0) return;
-
-            var pdm = Echoes.Core.Managers.PlayerDataManager.p_instance;
-            var backpackDict = pdm?.PlayerBackpackData?.Backpack;
-            if (backpackDict == null)
-            {
-                _log.LogWarning($"[Mod] AutoDisassemble: PlayerBackpackData.Backpack 为 null (pdm={pdm != null})");
-                return;
-            }
-            if (!backpackDict.ContainsKey(Echoes.Core.Managers.EBackpackItemType.Memory)) return;
-            var backpack = backpackDict[Echoes.Core.Managers.EBackpackItemType.Memory];
-            if (backpack?.BackpackItems == null) return;
-
-            // 快照目标（避免遍历中修改集合）
-            // 注意：Il2Cpp 列表元素是基类包装，C# `is` 会全部失败；必须用 TryCast（基于原生类型检查）
-            var equipped = new Il2CppSystem.Collections.Generic.HashSet<string>();
-            try { pdm?.PlayerDeckData?.CollectEquippedMemoryUIDs(equipped); } catch { }
-            var equippedCount = 0;
-            var targets = new System.Collections.Generic.List<Echoes.Core.Managers.Memory>();
-            foreach (var item in backpack.BackpackItems)
-            {
-                var m = item?.TryCast<Echoes.Core.Managers.Memory>();
-                if (m == null) continue;
-                if (!rarities.Contains(m.Rarity)) continue;
-                // 已装备保护：装备中/卡组引用的记忆不分解
-                if (m.EquipSlot != Echoes.Core.Enum.EMemorySlotType.None || equipped.Contains(m.GetMemroyUID()))
-                {
-                    equippedCount++;
-                    continue;
-                }
-                targets.Add(m);
-            }
-            if (targets.Count == 0)
-            {
-                var first = backpack.BackpackItems.Count > 0 ? backpack.BackpackItems[0] : null;
-                var firstM = first?.TryCast<Echoes.Core.Managers.Memory>();
-                _log.LogInfo($"[Mod] AutoDisassemble: 无目标记忆（BackpackItems.Count={backpack.BackpackItems.Count}，首项 isMemory={(firstM != null)} rarity={firstM?.Rarity ?? -1}，目标={DisassembleRarities.Value}）");
-                return;
-            }
-
-            var ui = GetBackPackUI();
-            if (ui == null)
-            {
-                _log.LogWarning("[Mod] AutoDisassemble: 找不到 UIBackPack 实例（请先打开一次背包界面）");
-                return;
-            }
-
-            _log.LogInfo($"[Mod] AutoDisassemble: 找到 {targets.Count} 件目标记忆（稀有度 {DisassembleRarities.Value}，跳过已装备 {equippedCount} 件），使用游戏自带批量分解");
-            foreach (var r in rarities)
-            {
-                try
-                {
-                    // 游戏自带"分解全部[稀有度]"，内部一次性处理 + 统一刷新（无逐个动画）
-                    ui.DisassembleAll(r);
-                    _log.LogInfo($"[Mod]   DisassembleAll(rarity={r}) 完成");
-                }
-                catch (Exception e)
-                {
-                    _log.LogWarning($"[Mod]   DisassembleAll({r}) 失败: {e.Message}，回退逐个分解该稀有度");
-                    foreach (var m in targets)
-                    {
-                        if (m.Rarity != r) continue;
-                        try { ui.DisassembleMemory(m); }
-                        catch (Exception inner) { _log.LogWarning($"[Mod]   回退分解失败 {m.GetMemroyUID()}: {inner.Message}"); }
-                    }
-                }
-            }
-            try { ui.RefreshUI(); } catch { }
-            _log.LogInfo("[Mod] AutoDisassemble 完成");
-        }
-        catch (Exception e)
-        {
-            _log.LogWarning($"[Mod] AutoDisassemble error: {e.Message}");
-        }
-    }
-
-    // ── 修复：清除"已卸下但仍标记已装备"的记忆状态（游戏卸下逻辑 bug 兜底）──
+    // ── 修复：清除"已装备"标记（F10 手动触发）
+    // 8/16 游戏更新后：CollectEquippedMemoryUIDs 返回集合含全部背包记忆（卡组集合不可信），
+    // 智能判断失效 → 改为强制清除模式：先诊断输出每件状态，再无条件清 EquipSlot=None。
     private static void RepairEquipState()
     {
         try
@@ -496,32 +358,149 @@ public static class ModPatches
             var backpack = backpackDict[Echoes.Core.Managers.EBackpackItemType.Memory];
             if (backpack?.BackpackItems == null) return;
 
-            // 1. 收集所有卡组当前装备的 UID（已装备 = UID 在卡组中）
+            // 1. 诊断：卡组集合（可能不可信，仅供观察）
             var equipped = new Il2CppSystem.Collections.Generic.HashSet<string>();
-            deckData.CollectEquippedMemoryUIDs(equipped);
+            try { deckData.CollectEquippedMemoryUIDs(equipped); } catch (Exception e) { _log.LogWarning($"[Mod] Repair: CollectEquippedMemoryUIDs 失败 {e.Message}"); }
+            _log.LogInfo($"[Mod] Repair: 卡组集合 {equipped.Count} 个，背包记忆 {backpack.BackpackItems.Count} 件");
+            try
+            {
+                var sbUids = new System.Text.StringBuilder();
+                foreach (var u in equipped) sbUids.Append($"[{u}]");
+                _log.LogInfo($"[Mod] Repair:   equipped UIDs: {sbUids}");
+            }
+            catch (Exception e) { _log.LogWarning($"[Mod] Repair: dump equipped 失败 {e.Message}"); }
 
-            // 2. 背包 Memory：EquipSlot 非 None 但 UID 不在任何卡组 → 残留标记，清除
+            // 1c. 诊断：dump PlayerDeckData 全部集合/标量字段（定位 0000009FE* 误报源）
+            try
+            {
+                _log.LogInfo($"[Mod] Repair: PlayerDeckData 字段探测：currentDeckUid={deckData.currentDeckUid} lastLoadoutDeckUID={deckData.lastLoadoutDeckUID} Decks={deckData.Decks?.Count ?? -1}");
+                try
+                {
+                    var lls = deckData.lastLoadoutSkillIds;
+                    var sb = new System.Text.StringBuilder();
+                    if (lls != null) foreach (var v in lls) sb.Append($"[{v}]");
+                    _log.LogInfo($"[Mod] Repair:   lastLoadoutSkillIds({lls?.Count ?? -1}): {sb}");
+                }
+                catch (Exception e) { _log.LogWarning($"[Mod] Repair: lastLoadoutSkillIds 读取失败 {e.Message}"); }
+                try
+                {
+                    var lls2 = deckData.lastLoadoutSlot2Skill;
+                    var sb = new System.Text.StringBuilder();
+                    if (lls2 != null) foreach (var kv in lls2) sb.Append($"[{kv.Key}->{kv.Value}]");
+                    _log.LogInfo($"[Mod] Repair:   lastLoadoutSlot2Skill({lls2?.Count ?? -1}): {sb}");
+                }
+                catch (Exception e) { _log.LogWarning($"[Mod] Repair: lastLoadoutSlot2Skill 读取失败 {e.Message}"); }
+                try
+                {
+                    var cur = deckData.currentMemoryDeck;
+                    _log.LogInfo($"[Mod] Repair:   currentMemoryDeck index={(cur?.Index ?? -1)} name={(cur?.Name ?? "?")} Slot2Memory={cur?.Slot2Memory?.Count ?? -1}");
+                    if (cur?.Slot2Memory != null)
+                    {
+                        var sb = new System.Text.StringBuilder();
+                        foreach (var kv in cur.Slot2Memory)
+                        {
+                            var uid = "?";
+                            try { uid = kv.Value?.ToString() ?? "<null>"; } catch (Exception e) { uid = $"<ERR:{e.Message}>"; }
+                            sb.Append($"[slot={kv.Key}->{uid}]");
+                        }
+                        _log.LogInfo($"[Mod] Repair:     currentMemoryDeck Slot2Memory: {sb}");
+                    }
+                    if (cur?.MemoryCache != null && cur.MemoryCache.Count > 0)
+                    {
+                        var sb2 = new System.Text.StringBuilder();
+                        foreach (var kv in cur.MemoryCache)
+                        {
+                            var uid = "?";
+                            try { uid = kv.Value?.ToString() ?? "<null>"; } catch (Exception e) { uid = $"<ERR:{e.Message}>"; }
+                            sb2.Append($"[k={kv.Key}->{uid}]");
+                        }
+                        _log.LogInfo($"[Mod] Repair:     currentMemoryDeck MemoryCache: {sb2}");
+                    }
+                    if (cur?.Slot2Potion != null && cur.Slot2Potion.Count > 0)
+                    {
+                        var sb3 = new System.Text.StringBuilder();
+                        foreach (var kv in cur.Slot2Potion) sb3.Append($"[{kv.Key}->{kv.Value}]");
+                        _log.LogInfo($"[Mod] Repair:     currentMemoryDeck Slot2Potion: {sb3}");
+                    }
+                }
+                catch (Exception e) { _log.LogWarning($"[Mod] Repair: currentMemoryDeck 读取失败 {e.Message}"); }
+                // 尝试遍历 Decks（List<DeckData>，仅打印数量与类型名，避免 API 猜测）
+                try
+                {
+                    var decks2 = deckData.Decks;
+                    _log.LogInfo($"[Mod] Repair:   Decks({decks2?.Count ?? -1})");
+                    if (decks2 != null && decks2.Count > 0)
+                    {
+                        var first = decks2[0];
+                        _log.LogInfo($"[Mod] Repair:     Decks[0] 类型={first?.GetType().FullName ?? "null"} ToString={first}");
+                    }
+                }
+                catch (Exception e) { _log.LogWarning($"[Mod] Repair: Decks 遍历失败 {e.Message}"); }
+            }
+            catch (Exception e) { _log.LogWarning($"[Mod] Repair: PlayerDeckData dump 失败 {e.Message}"); }
+
+            // 2. 逐件诊断 + 强制清除 EquipSlot（不管卡组集合，无条件清 None）
             var fixedCount = 0;
+            var diag = new System.Text.StringBuilder();
             foreach (var item in backpack.BackpackItems)
             {
                 var m = item?.TryCast<Echoes.Core.Managers.Memory>();
                 if (m == null) continue;
-                if (m.EquipSlot != Echoes.Core.Enum.EMemorySlotType.None && !equipped.Contains(m.GetMemroyUID()))
+                string uid = "?";
+                try { uid = m.GetMemroyUID(); } catch (Exception e) { uid = $"<ERR:{e.Message}>"; }
+                var slot = (int)m.EquipSlot;
+                if (m.EquipSlot != Echoes.Core.Enum.EMemorySlotType.None)
                 {
+                    diag.Append($"[{uid} slot={slot}]");
                     m.EquipSlot = Echoes.Core.Enum.EMemorySlotType.None;
                     fixedCount++;
-                    _log.LogInfo($"[Mod] Repair: 清除残留装备标记 uid={m.GetMemroyUID()}");
+                }
+                else
+                {
+                    diag.Append($"[{uid} slot=None]");
                 }
             }
+            _log.LogInfo($"[Mod] Repair: 扫描结果 {diag}");
 
-            if (fixedCount > 0)
+            // 2b. 清空"非当前"存档卡组的 Slot2Memory（8/16 更新后 UI 按卡组引用判定已装备；
+            //     旧卡组 MemoryDecks[1] 残留 6 件导致全部记忆被标记已装备）。
+            //     保留 currentMemoryDeck（当前使用卡组）不动。
+            var clearedDeckSlots = 0;
+            try
+            {
+                var curIdx = -1;
+                try { curIdx = deckData.currentMemoryDeck?.Index ?? -1; } catch { }
+                var decks = deckData.MemoryDecks;
+                if (decks != null)
+                {
+                    var di2 = 0;
+                    foreach (var d in decks)
+                    {
+                        di2++;
+                        var idx = -1;
+                        try { idx = d?.Index ?? -1; } catch { }
+                        if (d == null) continue;
+                        if (idx == curIdx && curIdx != -1) continue; // 跳过当前使用卡组
+                        var slot2 = d.Slot2Memory;
+                        if (slot2 != null && slot2.Count > 0)
+                        {
+                            _log.LogInfo($"[Mod] Repair: 清空卡组#{di2}(index={idx}) Slot2Memory({slot2.Count} 件)");
+                            try { slot2.Clear(); clearedDeckSlots++; } catch (Exception e) { _log.LogWarning($"[Mod] Repair: 清空卡组#{di2} 失败 {e.Message}"); }
+                        }
+                    }
+                }
+            }
+            catch (Exception e) { _log.LogWarning($"[Mod] Repair: 清空旧卡组失败 {e.Message}"); }
+            _log.LogInfo($"[Mod] Repair: 已清空 {clearedDeckSlots} 个旧卡组的记忆槽引用");
+
+            if (fixedCount > 0 || clearedDeckSlots > 0)
             {
                 try { Echoes.Core.Managers.PlayerDataManager.Save(); } catch (Exception e) { _log.LogWarning($"[Mod] Repair: 存档失败 {e.Message}"); }
-                _log.LogInfo($"[Mod] Repair: 修复 {fixedCount} 件残留，已存档（重进游戏后生效）");
+                _log.LogInfo($"[Mod] Repair: 已清除 EquipSlot {fixedCount} 件 + 旧卡组 {clearedDeckSlots} 个并存档（重进游戏/刷新界面后生效）");
             }
             else
             {
-                _log.LogInfo($"[Mod] Repair: 未发现残留装备标记（背包记忆 {backpack.BackpackItems.Count} 件，卡组装备 {equipped.Count} 个）");
+                _log.LogInfo($"[Mod] Repair: 无 EquipSlot 标记、无旧卡组残留（卡组集合 {equipped.Count} 个可能来自当前使用卡组）");
             }
         }
         catch (Exception e)
