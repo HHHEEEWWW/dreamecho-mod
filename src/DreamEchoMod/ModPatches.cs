@@ -39,7 +39,6 @@ public static class ModPatches
     public static ConfigEntry<bool> EnableRarityAvg { get; private set; } = null!;
     public static ConfigEntry<bool> EnableAutoAbsorb { get; private set; } = null!;
     public static ConfigEntry<bool> EnableDisassemble { get; private set; } = null!;
-    public static ConfigEntry<string> RepairKey { get; private set; } = null!;
 
     // 自动拾取运行时状态
     private static float _lastAbsorbTime = float.MinValue;
@@ -75,8 +74,6 @@ public static class ModPatches
         EnableAutoAbsorb = config.Bind("开关", "EnableAutoAbsorb", true, "自动拾取总开关。");
         EnableDisassemble = config.Bind("开关", "EnableDisassemble", false,
             "【已停用】一键分解总开关。游戏作者已添加分解功能，MOD 不再干预分解。");
-        RepairKey = config.Bind("修复", "RepairKey", "F10",
-            "修复热键（UnityEngine.KeyCode 名称）：清除背包中'已卸下但仍标记已装备'的记忆状态（游戏卸下逻辑 bug 兜底修复）。");
 
         var harmony = new Harmony("com.dreamecho.mod");
         var t = typeof(Echoes.Core.Utility.DropHelper);
@@ -308,10 +305,7 @@ public static class ModPatches
             }
 
             // F9 一键分解已移除（游戏作者已添加分解功能，MOD 不再干预分解）
-
-            // F10：修复残留已装备状态（游戏卸下逻辑 bug 兜底）
-            if (Enum.TryParse(RepairKey.Value, out KeyCode kc10) && UnityEngine.Input.GetKeyDown(kc10))
-                RepairEquipState();
+            // F10 卡组清空修复已移除（8/16 更新遗留的旧卡组残留已一次性修复）
         }
         catch (Exception e)
         {
@@ -340,172 +334,4 @@ public static class ModPatches
         }
     }
 
-    // ── 分解功能已移除（游戏作者已添加分解全部装备功能，MOD 不再干预分解）──
-
-    // ── 修复：清除"已装备"标记（F10 手动触发）
-    // 8/16 游戏更新后：CollectEquippedMemoryUIDs 返回集合含全部背包记忆（卡组集合不可信），
-    // 智能判断失效 → 改为强制清除模式：先诊断输出每件状态，再无条件清 EquipSlot=None。
-    private static void RepairEquipState()
-    {
-        try
-        {
-            var pdm = Echoes.Core.Managers.PlayerDataManager.p_instance;
-            if (pdm?.PlayerDeckData == null) { _log.LogWarning("[Mod] Repair: PlayerDeckData 不可用"); return; }
-            var deckData = pdm.PlayerDeckData;
-            var backpackDict = pdm.PlayerBackpackData?.Backpack;
-            if (backpackDict == null || !backpackDict.ContainsKey(Echoes.Core.Managers.EBackpackItemType.Memory))
-            { _log.LogWarning("[Mod] Repair: 背包不可用"); return; }
-            var backpack = backpackDict[Echoes.Core.Managers.EBackpackItemType.Memory];
-            if (backpack?.BackpackItems == null) return;
-
-            // 1. 诊断：卡组集合（可能不可信，仅供观察）
-            var equipped = new Il2CppSystem.Collections.Generic.HashSet<string>();
-            try { deckData.CollectEquippedMemoryUIDs(equipped); } catch (Exception e) { _log.LogWarning($"[Mod] Repair: CollectEquippedMemoryUIDs 失败 {e.Message}"); }
-            _log.LogInfo($"[Mod] Repair: 卡组集合 {equipped.Count} 个，背包记忆 {backpack.BackpackItems.Count} 件");
-            try
-            {
-                var sbUids = new System.Text.StringBuilder();
-                foreach (var u in equipped) sbUids.Append($"[{u}]");
-                _log.LogInfo($"[Mod] Repair:   equipped UIDs: {sbUids}");
-            }
-            catch (Exception e) { _log.LogWarning($"[Mod] Repair: dump equipped 失败 {e.Message}"); }
-
-            // 1c. 诊断：dump PlayerDeckData 全部集合/标量字段（定位 0000009FE* 误报源）
-            try
-            {
-                _log.LogInfo($"[Mod] Repair: PlayerDeckData 字段探测：currentDeckUid={deckData.currentDeckUid} lastLoadoutDeckUID={deckData.lastLoadoutDeckUID} Decks={deckData.Decks?.Count ?? -1}");
-                try
-                {
-                    var lls = deckData.lastLoadoutSkillIds;
-                    var sb = new System.Text.StringBuilder();
-                    if (lls != null) foreach (var v in lls) sb.Append($"[{v}]");
-                    _log.LogInfo($"[Mod] Repair:   lastLoadoutSkillIds({lls?.Count ?? -1}): {sb}");
-                }
-                catch (Exception e) { _log.LogWarning($"[Mod] Repair: lastLoadoutSkillIds 读取失败 {e.Message}"); }
-                try
-                {
-                    var lls2 = deckData.lastLoadoutSlot2Skill;
-                    var sb = new System.Text.StringBuilder();
-                    if (lls2 != null) foreach (var kv in lls2) sb.Append($"[{kv.Key}->{kv.Value}]");
-                    _log.LogInfo($"[Mod] Repair:   lastLoadoutSlot2Skill({lls2?.Count ?? -1}): {sb}");
-                }
-                catch (Exception e) { _log.LogWarning($"[Mod] Repair: lastLoadoutSlot2Skill 读取失败 {e.Message}"); }
-                try
-                {
-                    var cur = deckData.currentMemoryDeck;
-                    _log.LogInfo($"[Mod] Repair:   currentMemoryDeck index={(cur?.Index ?? -1)} name={(cur?.Name ?? "?")} Slot2Memory={cur?.Slot2Memory?.Count ?? -1}");
-                    if (cur?.Slot2Memory != null)
-                    {
-                        var sb = new System.Text.StringBuilder();
-                        foreach (var kv in cur.Slot2Memory)
-                        {
-                            var uid = "?";
-                            try { uid = kv.Value?.ToString() ?? "<null>"; } catch (Exception e) { uid = $"<ERR:{e.Message}>"; }
-                            sb.Append($"[slot={kv.Key}->{uid}]");
-                        }
-                        _log.LogInfo($"[Mod] Repair:     currentMemoryDeck Slot2Memory: {sb}");
-                    }
-                    if (cur?.MemoryCache != null && cur.MemoryCache.Count > 0)
-                    {
-                        var sb2 = new System.Text.StringBuilder();
-                        foreach (var kv in cur.MemoryCache)
-                        {
-                            var uid = "?";
-                            try { uid = kv.Value?.ToString() ?? "<null>"; } catch (Exception e) { uid = $"<ERR:{e.Message}>"; }
-                            sb2.Append($"[k={kv.Key}->{uid}]");
-                        }
-                        _log.LogInfo($"[Mod] Repair:     currentMemoryDeck MemoryCache: {sb2}");
-                    }
-                    if (cur?.Slot2Potion != null && cur.Slot2Potion.Count > 0)
-                    {
-                        var sb3 = new System.Text.StringBuilder();
-                        foreach (var kv in cur.Slot2Potion) sb3.Append($"[{kv.Key}->{kv.Value}]");
-                        _log.LogInfo($"[Mod] Repair:     currentMemoryDeck Slot2Potion: {sb3}");
-                    }
-                }
-                catch (Exception e) { _log.LogWarning($"[Mod] Repair: currentMemoryDeck 读取失败 {e.Message}"); }
-                // 尝试遍历 Decks（List<DeckData>，仅打印数量与类型名，避免 API 猜测）
-                try
-                {
-                    var decks2 = deckData.Decks;
-                    _log.LogInfo($"[Mod] Repair:   Decks({decks2?.Count ?? -1})");
-                    if (decks2 != null && decks2.Count > 0)
-                    {
-                        var first = decks2[0];
-                        _log.LogInfo($"[Mod] Repair:     Decks[0] 类型={first?.GetType().FullName ?? "null"} ToString={first}");
-                    }
-                }
-                catch (Exception e) { _log.LogWarning($"[Mod] Repair: Decks 遍历失败 {e.Message}"); }
-            }
-            catch (Exception e) { _log.LogWarning($"[Mod] Repair: PlayerDeckData dump 失败 {e.Message}"); }
-
-            // 2. 逐件诊断 + 强制清除 EquipSlot（不管卡组集合，无条件清 None）
-            var fixedCount = 0;
-            var diag = new System.Text.StringBuilder();
-            foreach (var item in backpack.BackpackItems)
-            {
-                var m = item?.TryCast<Echoes.Core.Managers.Memory>();
-                if (m == null) continue;
-                string uid = "?";
-                try { uid = m.GetMemroyUID(); } catch (Exception e) { uid = $"<ERR:{e.Message}>"; }
-                var slot = (int)m.EquipSlot;
-                if (m.EquipSlot != Echoes.Core.Enum.EMemorySlotType.None)
-                {
-                    diag.Append($"[{uid} slot={slot}]");
-                    m.EquipSlot = Echoes.Core.Enum.EMemorySlotType.None;
-                    fixedCount++;
-                }
-                else
-                {
-                    diag.Append($"[{uid} slot=None]");
-                }
-            }
-            _log.LogInfo($"[Mod] Repair: 扫描结果 {diag}");
-
-            // 2b. 清空"非当前"存档卡组的 Slot2Memory（8/16 更新后 UI 按卡组引用判定已装备；
-            //     旧卡组 MemoryDecks[1] 残留 6 件导致全部记忆被标记已装备）。
-            //     保留 currentMemoryDeck（当前使用卡组）不动。
-            var clearedDeckSlots = 0;
-            try
-            {
-                var curIdx = -1;
-                try { curIdx = deckData.currentMemoryDeck?.Index ?? -1; } catch { }
-                var decks = deckData.MemoryDecks;
-                if (decks != null)
-                {
-                    var di2 = 0;
-                    foreach (var d in decks)
-                    {
-                        di2++;
-                        var idx = -1;
-                        try { idx = d?.Index ?? -1; } catch { }
-                        if (d == null) continue;
-                        if (idx == curIdx && curIdx != -1) continue; // 跳过当前使用卡组
-                        var slot2 = d.Slot2Memory;
-                        if (slot2 != null && slot2.Count > 0)
-                        {
-                            _log.LogInfo($"[Mod] Repair: 清空卡组#{di2}(index={idx}) Slot2Memory({slot2.Count} 件)");
-                            try { slot2.Clear(); clearedDeckSlots++; } catch (Exception e) { _log.LogWarning($"[Mod] Repair: 清空卡组#{di2} 失败 {e.Message}"); }
-                        }
-                    }
-                }
-            }
-            catch (Exception e) { _log.LogWarning($"[Mod] Repair: 清空旧卡组失败 {e.Message}"); }
-            _log.LogInfo($"[Mod] Repair: 已清空 {clearedDeckSlots} 个旧卡组的记忆槽引用");
-
-            if (fixedCount > 0 || clearedDeckSlots > 0)
-            {
-                try { Echoes.Core.Managers.PlayerDataManager.Save(); } catch (Exception e) { _log.LogWarning($"[Mod] Repair: 存档失败 {e.Message}"); }
-                _log.LogInfo($"[Mod] Repair: 已清除 EquipSlot {fixedCount} 件 + 旧卡组 {clearedDeckSlots} 个并存档（重进游戏/刷新界面后生效）");
-            }
-            else
-            {
-                _log.LogInfo($"[Mod] Repair: 无 EquipSlot 标记、无旧卡组残留（卡组集合 {equipped.Count} 个可能来自当前使用卡组）");
-            }
-        }
-        catch (Exception e)
-        {
-            _log.LogWarning($"[Mod] Repair error: {e.Message}");
-        }
-    }
 }
