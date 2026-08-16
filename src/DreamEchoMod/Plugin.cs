@@ -22,6 +22,7 @@ public class Plugin : BasePlugin
         ModPatches.Install(Log, Config);
 
         // 临时诊断探针：稀有度掷骰参数观察（限频）
-        ProbePatches.Install(Log);
+        // [BISECT-1] 临时禁用探针，定位 coreclr 0xc0000005 崩溃源（游戏 8/16 更新后）
+        // ProbePatches.Install(Log);
     }
 }
