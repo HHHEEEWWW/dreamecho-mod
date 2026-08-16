@@ -1,6 +1,6 @@
 # 阶段性总结：梦境回响 DreamEcho MOD
 
-- 日期：2026-08-14（更新：T1 方案 #4 验证成功 + 0.1.1 兼容验证完成）
+- 日期：2026-08-14（更新：T1 方案 #4 验证成功 + 0.1.1 兼容验证完成；2026-08-16 游戏更新与修复）
 - 阶段：装备/掉落/词缀系统 MOD 开发（中期，进行中）
 - 项目：`E:\deepseekharness\BeplnEx-mod-workplace\dreamecho-mod`（git main）
 
@@ -14,7 +14,7 @@
 2. ✅ 词缀只出最高 T 级（T1）——**方案 #4 验证成功（2026-08-14）**
 3. ⚠️ 稀有度调整（平均化已上线，3:1 精确比例待定）
 4. ✅ 自动拾取（F8 开关，复用一键拾取）——**2026-08-14 上线**
-5. ✅ 一键分解（F9，批量 DisassembleAll，含原初回忆）——**2026-08-14 上线**
+5. ✅ 一键分解（F9，批量 DisassembleAll，含原初回忆）——**2026-08-14 上线，2026-08-16 移除**（游戏作者原生添加，见 §6b）
 
 ## 2. 新功能（2026-08-14 上线）
 
@@ -24,7 +24,8 @@
 - 热键：**F8** 切换开/关（运行时）；配置：`AutoAbsorb`、`Interval`、`ToggleKey`
 - 注意：热键检测挂 `InputManager.Update`（MonoBehaviour 全局每帧，任何界面可用）
 
-### 2.6 一键分解（正式功能）
+### 2.6 一键分解（已上线，2026-08-16 移除）
+> 状态：**已移除**——游戏作者已原生添加分解功能，MOD 不再干预（详见 §6b）。以下为历史实现记录。
 - 定位：分解逻辑在 `Echoes.UI.UIBackPack`（`DisassembleAll`/`DisassembleMemory` 等）；回忆工作台 = TAB 打开的 UI
 - 实现：hook `InputManager.Update` 检测 **F9** → 遍历 `PlayerBackpackData.Backpack[Memory]` → 按稀有度过滤 → 调用游戏自带 `DisassembleAll(rarity)`（一次性批量分解）
 - 实测：1594 件一次性分解成功，无逐个动画；原初回忆（Special=5）可一键分解
@@ -139,16 +140,42 @@ DropMultiplierPacks = 701:10,711:2   # 装备碎片×10 : 车票×2 = 5:1
 RarityWeights = 100         # 单值=所有档位等概率（平均化）
 ```
 
+## 6b. 2026-08-16：游戏更新与修复记录（重要）
+
+### 事件时间线
+
+| 时间 | 事件 | 处理 |
+|---|---|---|
+| 8/16 18:48 | 游戏更新 buildid 24761955（GameAssembly + metadata 变更） | — |
+| 8/16 21:17 | 启用探针时 **coreclr.dll 确定性崩溃**（0xc0000005 @ 0x1d1fdd） | 二分定位：禁用 `ProbePatches` 后稳定（commit `96ed41a`） |
+| 8/16 22:04 | 排查"已装备标签残留"；同时发现游戏作者已原生添加分解功能 | 移除 MOD 一键分解（避免冲突）+ F10 修复升级为清空旧卡组引用（commit `e01832c`） |
+| 8/16 22:07 | 装备残留 bug 一次性修复完成 | 清理收尾：删 ProbePatches、移除 F10/RepairKey（commit `a58fb3f`） |
+
+### 关键结论
+
+1. **coreclr 崩溃根因**：探针访问的 UI/装备数据结构（`Memory.GetMemroyUID` 报 `Length cannot be less than zero`）在游戏更新后不兼容，**原生层崩溃无法被 try/catch 捕获**（Harmony prefix 内访问越界 → native crash）。教训：探针代码必须对 Il2Cpp 对象访问做防御（null/边界检查），更新后优先验证探针兼容性。
+2. **已装备标签残留真相**（8/16 更新后）：UI 按**卡组引用**判定"已装备"；旧卡组 `MemoryDecks[1]` 残留 6 件引用 → 背包 11 件记忆全部被标记已装备无法分解。修复 = **清空非当前卡组（保留 currentMemoryDeck）的 Slot2Memory + 存档**，实测卡组集合 11→6，旧记忆恢复可分解。一次性修复后无需常驻修复代码。
+3. **分解功能回归游戏原生**：游戏作者已添加"分解全部装备"，MOD 的 F9 批量分解移除（`DisassembleAll` 探针一并移除），分解相关 cfg 键保留兼容但默认停用（`EnableDisassemble=false`、`AutoOnEnter=false`、`DisassembleKey=None`）。
+4. **BepInEx 升级 be.755 → be.785**：BPM 档案重建（数据根迁移至 `E:\trainer\BepInExManager\data`，档案 `pmsvsp60850ku`），interop 重建 160 DLL，4 个正式功能 patch 全部正常。
+
+### 当前 MOD 形态（2026-08-16 后）
+
+- 保留：T1 词缀 / 掉落翻倍 / 稀有度平均化 / 自动拾取（F8）
+- 移除：一键分解（F9）、F10 修复、全部诊断探针（`ProbePatches.cs` 已删）
+- 仅存两个只读观察钩子：`BMR prefix`（memoryLevel）、`GetDrop prefix`（dropLevel）——低开销，保留用于后续校准
+
 ## 7. 待办
 
 - [x] **T1 方案 #4 验证**（BMR postfix 替换）——✅ 成功，全最高档
 - [x] **0.1.1 补丁兼容**（buildid 24718487）——✅ 零改动兼容，8 补丁全装
 - [x] **自动拾取**——✅ 上线（F8 开关，复用 AbsorbAllDropItem）
-- [x] **一键分解**——✅ 上线（F9 批量 DisassembleAll，含原初回忆）
+- [x] **一键分解**——✅ 上线后已移除（2026-08-16 游戏作者原生添加，MOD 回归）
+- [x] **已装备标签残留**——✅ 一次性修复（2026-08-16 清空旧卡组引用）
+- [x] **8/16 更新兼容**——✅ be.785 + interop 重建，4 功能 patch 全装
 - [ ] 确认 memoryLevel 来源（车票等级？难度？）——观察日志已有 60/70/81/84 分布
 - [ ] 稀有度精确比例（若需 3:1 而非平均化，配置多值权重）
 - [ ] 高级图碎片包确认（630xx 是否替代 701）
-- [ ] 自动拾取效果回归确认（用户最终验收）
+- [ ] 玩家分发打包（DLL + INSTALL.md + BepInExPack 三件套）
 
 ## 8. 文件结构
 
@@ -156,10 +183,10 @@ RarityWeights = 100         # 单值=所有档位等概率（平均化）
 dreamecho-mod/
   ├─ src/DreamEchoMod/
   │   ├─ Plugin.cs           入口（Load）
-  │   ├─ ModPatches.cs       正式功能（掉落放大/稀有度/词缀）
-  │   └─ ProbePatches.cs     诊断探针（限频）
-  ├─ tools/TypeExplorer/     interop 反射搜索工具
+  │   └─ ModPatches.cs       正式功能（T1词缀/掉落放大/稀有度/自动拾取）
+  ├─ tools/TypeExplorer/     interop 反射搜索工具（doorstop 反推档案路径）
   ├─ docs/                   设计/计划/研判/验证结论/本总结
   ├─ il2cpp-dump/            导出摘要（候选类线索）
-  └─ build.ps1               构建+部署
+  ├─ build.ps1               构建+部署（BPM 隔离：doorstop 反推档案）
+  └─ test-equip-bug.bat      测试辅助（启动游戏+开日志）
 ```

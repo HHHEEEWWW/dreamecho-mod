@@ -1,18 +1,17 @@
 # 梦境回响 DreamEcho MOD（DreamEchoMod）
 
-为 Steam 游戏《梦境回响 DreamEcho》（AppID 3226060，Unity 2022.3.62 IL2CPP）开发的 BepInEx 6 插件。技术链路（BepInEx 注入 → IL2CPP interop 类访问 → HarmonyX 补丁）已打通，当前五个修改方向全部上线：掉落翻倍、T1 词缀、稀有度平均化、自动拾取、一键分解。
+为 Steam 游戏《梦境回响 DreamEcho》（AppID 3226060，Unity 2022.3.62 IL2CPP）开发的 BepInEx 6 插件。技术链路（BepInEx 注入 → IL2CPP interop 类访问 → HarmonyX 补丁）已打通，当前四个正式功能上线：掉落翻倍、T1 词缀、稀有度平均化、自动拾取。
 
 ## 已实现功能（`src/DreamEchoMod/ModPatches.cs`）
 
 | 功能 | 原理 | 配置 |
 |---|---|---|
-| 词缀最高档（T1） | `BuildMemoryRandom` Postfix 把选中词缀替换为最高档（数值+标签全变） | `MemoryDropLevel`（已停用）、`MemoryDropPacks`（已停用） |
-| 掉落包数量翻倍 | `CreateDrop` 前缀向包列表按倍率追加条目（深度保护仅最外层生效，后缀恢复列表防游戏缓存指数爆炸） | `DropMultiplierPacks` |
-| 稀有度平均化 | `RandomDrop` 权重前缀改写为均一值 | `RarityWeights` |
-| **自动拾取** | 复用游戏一键拾取（`InteractiveItemManager.AbsorbAllDropItem`），挂 `OnUpdate` 节流 0.5s 全图吸收；**F8** 游戏内开/关 | `AutoAbsorb`、`Interval`、`ToggleKey` |
-| **一键分解** | 遍历背包记忆按稀有度过滤 → 调用游戏自带 `DisassembleAll(rarity)` 一次性批量分解（含原初回忆）；**F9** 任意界面触发 | `DisassembleRarities`、`AutoOnEnter`、`DisassembleKey` |
+| 词缀最高档（T1） | `BuildMemoryRandom` Postfix 把选中词缀替换为最高档（数值+标签全变） | `EnableT1`（总开关） |
+| 掉落包数量翻倍 | `CreateDrop` 前缀向包列表按倍率追加条目（深度保护仅最外层生效，后缀恢复列表防游戏缓存指数爆炸） | `EnableDropMultiplier`、`DropMultiplierPacks` |
+| 稀有度平均化 | `RandomDrop` 权重前缀改写为均一值 | `EnableRarityAvg`、`RarityWeights` |
+| 自动拾取 | 复用游戏一键拾取（`InteractiveItemManager.AbsorbAllDropItem`），挂 `OnUpdate` 节流 0.5s 全图吸收；**F8** 游戏内开/关 | `EnableAutoAbsorb`、`AutoAbsorb`、`Interval`、`ToggleKey` |
 
-另有诊断探针 `src/DreamEchoMod/ProbePatches.cs`：只读观察稀有度权重、掉落比率、词缀档位、UI 页面打开等链路参数（限频写日志），用于校准配置。
+> 已移除（游戏作者原生支持，MOD 不再干预）：一键分解（游戏已自带"分解全部装备"）、F10 修复热键、全部诊断探针。相关 cfg 键保留兼容（见配置表【已停用】）。
 
 ## 前置条件
 
@@ -46,42 +45,46 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 | 自动拾取 | `AutoAbsorb` | `true` | 自动拾取总开关 |
 | 自动拾取 | `Interval` | `0.5` | 自动拾取间隔（秒） |
 | 自动拾取 | `ToggleKey` | `F8` | 游戏内开/关热键（KeyCode 名） |
-| 分解 | `DisassembleRarities` | `Normal,Magic,Rare,Unique,Special` | 一键分解目标稀有度（枚举名，默认全部=清空记忆；空=关闭） |
-| 分解 | `AutoOnEnter` | `true` | 进入分解模式时自动分解 |
-| 分解 | `DisassembleKey` | `F9` | 一键分解热键（KeyCode 名，任意界面可用） |
-| 开关 | `EnableT1 / EnableDropMultiplier / EnableRarityAvg / EnableAutoAbsorb / EnableDisassemble` | `true` | 各功能总开关（排查问题时按个关闭做二分定位） |
-| 修复 | `RepairKey` | `F10` | 修复热键：清除背包中"已卸下但仍标记已装备"的记忆状态并存档 |
+| 分解 | `DisassembleRarities` | `Normal,Magic,Rare,Unique,Special` | 【已停用】一键分解目标稀有度（游戏作者已原生添加分解功能） |
+| 分解 | `AutoOnEnter` | `false` | 【已停用】进入分解模式时自动分解 |
+| 分解 | `DisassembleKey` | `None` | 【已停用】一键分解热键 |
+| 开关 | `EnableT1` | `true` | T1 词缀总开关 |
+| 开关 | `EnableDropMultiplier` | `true` | 掉落包翻倍总开关 |
+| 开关 | `EnableRarityAvg` | `true` | 稀有度平均化总开关 |
+| 开关 | `EnableAutoAbsorb` | `true` | 自动拾取总开关 |
+| 开关 | `EnableDisassemble` | `false` | 【已停用】一键分解总开关（MOD 不再干预分解） |
 
 ## 验证方法
 
 1. 从 Steam 启动游戏（或直接运行 `DreamEchoes.exe`）
-2. 查看档案日志 `<BPM数据根>\plugin-library\dreamecho-2ffb\<档案id>\BepInEx\LogOutput.log`（入口：`test-equip-bug.bat` 自动定位并打开）
+2. 查看档案日志 `<BPM数据根>\plugin-library\dreamecho-2ffb\<档案id>\BepInEx\LogOutput.log`
 3. 关键行：
    - `Loading [DreamEchoMod 0.1.0]` —— 插件被加载
    - `[Mod] patched DropHelper.BuildMemoryRandom ...` 等 —— 各补丁安装成功
-   - `[Mod] BMR prefix: memoryLevel=...`、`[Mod] Rarity [...] ...` —— 游戏内实际触发
-   - `[Probe] ...` —— 探针观察输出（含已装备残留专项：`UnEquip(data)` / `DisassembleAll` / `★...发现 N 件残留`）
+   - `[Mod] BMR prefix: memoryLevel=...`、`[Mod] Rarity [...] ...`、`[Mod] Drop +N packs` —— 游戏内实际触发
+   - `[Mod] InputManager.Update heartbeat` —— 全局热键钩子持续运行
 
 ## 目录结构
 
 ```
 dreamecho-mod/
-  ├─ src/DreamEchoMod/      插件源码（Plugin.cs / ModPatches.cs / ProbePatches.cs，net6.0）
-  ├─ il2cpp-dump/           结构导出摘要（BepInEx 自动生成 interop 的说明与数值类线索）
-  ├─ docs/                  设计文档 / 实施计划 / 研判报告 / 链路验证结论
+  ├─ src/DreamEchoMod/      插件源码（Plugin.cs / ModPatches.cs，net6.0）
+  ├─ il2cpp-dump/           结构导出摘要（interop 说明与数值类线索）
+  ├─ docs/                  设计文档 / 实施计划 / 研判报告 / 阶段性总结
   ├─ tools/                 BepInExPack、Cpp2IL、TypeExplorer 等工具（TypeExplorer 入 git）
-  └─ build.ps1              构建 + 部署一条命令
+  ├─ build.ps1              构建 + 部署一条命令（doorstop 反推档案路径）
+  └─ test-equip-bug.bat     测试辅助：启动游戏 + 自动打开档案日志（纯 ASCII）
 ```
 
 ## 当前状态
 
 - ✅ 技术链路 MVP 完成（详见 `docs/链路验证结论.md`）
 - ✅ 掉落链路研判完成（详见 `docs/研判-装备词缀掉落系统.md`）
-- ✅ 五大功能上线验收：T1 词缀 / 掉落翻倍 / 稀有度平均化 / 自动拾取（F8）/ 一键分解（F9）
+- ✅ 四大功能上线：T1 词缀 / 掉落翻倍 / 稀有度平均化 / 自动拾取（F8）
 - ✅ 开发链适配 BPM 隔离模式（csproj `$(BepDir)` + build.ps1 doorstop 反推档案部署）
-- 🔴 **排查中**：已装备标签残留 bug——F10 修复热键 + 5 功能开关已部署；专项探针
-  （`UIBackPackSystem.UnEquip/Equip`、`DisassembleAll`、`CheckMemorySlotType`、`CollectEquippedMemoryUIDs`）
-  已部署，跑一轮 `test-equip-bug.bat` 复现即可取证定位元凶
+- ✅ 已装备标签残留 bug 已修复（2026-08-16：旧卡组引用清空一次性修复，相关探针/热键已移除）
+- ✅ 8/16 游戏更新兼容（buildid 24761955，BepInEx 升级 be.785，patch 全部正常）
+- 📋 待办：稀有度 3:1 精确比例（配置多值权重已支持）、玩家分发打包（DLL + INSTALL.md + BepInExPack）
 
 ## 相关文档
 
@@ -89,3 +92,5 @@ dreamecho-mod/
 - 计划：`docs/superpowers/plans/2026-08-13-dreamecho-mod.md`
 - 研判：`docs/研判-装备词缀掉落系统.md`
 - 结论：`docs/链路验证结论.md`
+- 总结：`docs/阶段性总结-装备词缀掉落MOD.md`
+- 安装：`INSTALL.md`
