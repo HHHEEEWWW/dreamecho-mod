@@ -39,6 +39,7 @@ public static class ModPatches
     public static ConfigEntry<bool> EnableRarityAvg { get; private set; } = null!;
     public static ConfigEntry<bool> EnableAutoAbsorb { get; private set; } = null!;
     public static ConfigEntry<bool> EnableDisassemble { get; private set; } = null!;
+    public static ConfigEntry<string> RepairKey { get; private set; } = null!;
 
     // 自动拾取运行时状态
     private static float _lastAbsorbTime = float.MinValue;
@@ -74,6 +75,8 @@ public static class ModPatches
         EnableAutoAbsorb = config.Bind("开关", "EnableAutoAbsorb", true, "自动拾取总开关。");
         EnableDisassemble = config.Bind("开关", "EnableDisassemble", false,
             "【已停用】一键分解总开关。游戏作者已添加分解功能，MOD 不再干预分解。");
+        RepairKey = config.Bind("修复", "RepairKey", "F10",
+            "修复热键（UnityEngine.KeyCode 名称）：清除'已卸下但仍显示已装备'的残留状态（对账卡组引用与 EquipSlot 字段，仅修不一致，不动正常装备）。");
 
         var harmony = new Harmony("com.dreamecho.mod");
         var t = typeof(Echoes.Core.Utility.DropHelper);
@@ -305,7 +308,10 @@ public static class ModPatches
             }
 
             // F9 一键分解已移除（游戏作者已添加分解功能，MOD 不再干预分解）
-            // F10 卡组清空修复已移除（8/16 更新遗留的旧卡组残留已一次性修复）
+
+            // F10：修复"已卸下但仍显示已装备"残留（对账卡组引用与 EquipSlot，仅修不一致）
+            if (Enum.TryParse(RepairKey.Value, out KeyCode kc10) && UnityEngine.Input.GetKeyDown(kc10))
+                RepairEquipState();
         }
         catch (Exception e)
         {
@@ -332,6 +338,147 @@ public static class ModPatches
         {
             _log.LogWarning($"[Mod] AutoAbsorb error: {e.Message}");
         }
+    }
+
+    // ── F10 修复：清除"已卸下但仍显示已装备"残留（v2 精确对账版）──
+    // 8/16 认知：UI"已装备"按卡组引用判定（CollectEquippedMemoryUIDs 收集全部 MemoryDeck
+    // 的 Slot2Memory 引用），与 Memory.EquipSlot 字段可能不一致。卸下 bug 的表现：
+    //   方向 A：EquipSlot 已清但非当前卡组仍引用该 UID → UI 仍显示已装备
+    //   方向 B：EquipSlot 未清（字段残留），但卡组无引用
+    // 修复原则：只对账不一致状态，不动当前卡组的正常装备。
+    private static void RepairEquipState()
+    {
+        try
+        {
+            var pdm = Echoes.Core.Managers.PlayerDataManager.p_instance;
+            if (pdm?.PlayerDeckData == null) { _log.LogWarning("[Mod] Repair: PlayerDeckData 不可用"); return; }
+            var deckData = pdm.PlayerDeckData;
+            var backpackDict = pdm.PlayerBackpackData?.Backpack;
+            if (backpackDict == null || !backpackDict.ContainsKey(Echoes.Core.Managers.EBackpackItemType.Memory))
+            { _log.LogWarning("[Mod] Repair: 背包不可用"); return; }
+            var backpack = backpackDict[Echoes.Core.Managers.EBackpackItemType.Memory];
+            if (backpack?.BackpackItems == null) return;
+
+            // 1. 收集引用集合：全部卡组 + 当前卡组
+            var allEquipped = new Il2CppSystem.Collections.Generic.HashSet<string>();
+            try { deckData.CollectEquippedMemoryUIDs(allEquipped); } catch (Exception e) { _log.LogWarning($"[Mod] Repair: CollectEquippedMemoryUIDs 失败 {e.Message}"); }
+
+            var curIdx = -1;
+            var curDeck = deckData.currentMemoryDeck;
+            try { curIdx = curDeck?.Index ?? -1; } catch { }
+            var curUids = new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal);
+            try
+            {
+                if (curDeck?.Slot2Memory != null)
+                    foreach (var kv in curDeck.Slot2Memory)
+                        try { curUids.Add(kv.Value?.ToString() ?? ""); } catch { }
+            }
+            catch (Exception e) { _log.LogWarning($"[Mod] Repair: 读当前卡组引用失败 {e.Message}"); }
+
+            _log.LogInfo($"[Mod] Repair: 当前卡组 index={curIdx} 引用 {curUids.Count} 个；全部卡组引用 {allEquipped.Count} 个；背包记忆 {backpack.BackpackItems.Count} 件");
+
+            // 2. 对账背包记忆
+            var fixedSlot = 0;
+            var diag = new System.Text.StringBuilder();
+            foreach (var item in backpack.BackpackItems)
+            {
+                var m = item?.TryCast<Echoes.Core.Managers.Memory>();
+                if (m == null) continue;
+                string uid = "?";
+                try { uid = m.GetMemroyUID(); } catch (Exception e) { uid = $"<ERR:{e.Message}>"; }
+                var hasSlot = m.EquipSlot != Echoes.Core.Enum.EMemorySlotType.None;
+                var inCur = curUids.Contains(uid);
+                var inAny = allEquipped.Contains(uid);
+
+                if (hasSlot && !inCur)
+                {
+                    // 方向 B：字段残留（卡组无引用）→ 清字段
+                    m.EquipSlot = Echoes.Core.Enum.EMemorySlotType.None;
+                    fixedSlot++;
+                    diag.Append($"[{uid} 清字段]");
+                }
+                else if (!hasSlot && inAny && !inCur)
+                {
+                    // 方向 A：卡组残留引用（已卸下但非当前卡组仍引用）→ 稍后从卡组移除
+                    diag.Append($"[{uid} 卡组残留]");
+                }
+                else
+                {
+                    diag.Append(hasSlot ? $"[{uid} 装备中]" : $"[{uid} 空闲]");
+                }
+            }
+            _log.LogInfo($"[Mod] Repair: 对账扫描 {diag}");
+
+            // 3. 方向 A：从非当前卡组移除"已卸下（EquipSlot=None）"的残留引用
+            var removedRefs = 0;
+            try
+            {
+                var decks = deckData.MemoryDecks;
+                if (decks != null && curIdx != -1)
+                {
+                    var di = 0;
+                    foreach (var d in decks)
+                    {
+                        di++;
+                        if (d == null) continue;
+                        var idx = -1;
+                        try { idx = d.Index; } catch { }
+                        if (idx == curIdx) continue; // 不动当前使用卡组
+                        var slot2 = d.Slot2Memory;
+                        if (slot2 == null || slot2.Count == 0) continue;
+                        // 收集该卡组中引用"空闲记忆"的槽位（EquipSlot=None 且不在当前卡组）
+                        var toRemove = new System.Collections.Generic.List<Echoes.Core.Enum.EMemorySlotType>();
+                        foreach (var kv in slot2)
+                        {
+                            var uid = "?";
+                            try { uid = kv.Value?.ToString() ?? ""; } catch { continue; }
+                            if (curUids.Contains(uid)) continue; // 当前卡组在用，跳过
+                            var m = FindBackpackMemory(backpack, uid);
+                            if (m != null && m.EquipSlot == Echoes.Core.Enum.EMemorySlotType.None)
+                                toRemove.Add(kv.Key);
+                        }
+                        foreach (var slot in toRemove)
+                        {
+                            try { slot2.Remove(slot); removedRefs++; }
+                            catch (Exception e) { _log.LogWarning($"[Mod] Repair: 移除卡组#{di} 槽 {slot} 失败 {e.Message}"); }
+                        }
+                        if (toRemove.Count > 0)
+                            _log.LogInfo($"[Mod] Repair: 卡组#{di}(index={idx}) 移除 {toRemove.Count} 个残留引用");
+                    }
+                }
+            }
+            catch (Exception e) { _log.LogWarning($"[Mod] Repair: 清卡组残留引用失败 {e.Message}"); }
+
+            // 4. 存档
+            if (fixedSlot > 0 || removedRefs > 0)
+            {
+                try { Echoes.Core.Managers.PlayerDataManager.Save(); } catch (Exception e) { _log.LogWarning($"[Mod] Repair: 存档失败 {e.Message}"); }
+                _log.LogInfo($"[Mod] Repair: 修复完成——清字段 {fixedSlot} 件 + 移除卡组残留引用 {removedRefs} 个，已存档（重进/刷新界面后生效）");
+            }
+            else
+            {
+                _log.LogInfo($"[Mod] Repair: 未发现残留（全部一致）");
+            }
+        }
+        catch (Exception e)
+        {
+            _log.LogWarning($"[Mod] Repair error: {e.Message}");
+        }
+    }
+
+    // 按 UID 在背包中查找记忆（Il2Cpp 列表元素需 TryCast）
+    private static Echoes.Core.Managers.Memory? FindBackpackMemory(Echoes.Core.Managers.Backpack backpack, string uid)
+    {
+        if (backpack?.BackpackItems == null || string.IsNullOrEmpty(uid)) return null;
+        foreach (var item in backpack.BackpackItems)
+        {
+            var m = item?.TryCast<Echoes.Core.Managers.Memory>();
+            if (m == null) continue;
+            string u = "?";
+            try { u = m.GetMemroyUID(); } catch { continue; }
+            if (u == uid) return m;
+        }
+        return null;
     }
 
 }
